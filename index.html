@@ -194,7 +194,7 @@
       return mesh;
     }
 
-    function spawnBean({ x = 0, y = 9, z = 0 } = {}) {
+    function spawnBean({ x = 0, y = 8, z = 0 } = {}) {
       const mesh = createBeanMesh();
       const radius = 0.34 * mesh.scale.x;
       const body = new CANNON.Body({
@@ -203,9 +203,9 @@
         material: beanMaterial,
       });
 
-      body.position.set(x, y + Math.random() * 0.75, z);
-      body.angularVelocity.set(Math.random() * 8, Math.random() * 6, Math.random() * 8);
-      body.velocity.set((Math.random() - 0.5) * 0.6, -1, (Math.random() - 0.5) * 0.6);
+      body.position.set(x + (Math.random() - 0.5) * 1.6, y + Math.random() * 0.5, z + (Math.random() - 0.5) * 1.6);
+      body.angularVelocity.set(Math.random() * 10, Math.random() * 8, Math.random() * 10);
+      body.velocity.set((Math.random() - 0.5) * 2, 0, (Math.random() - 0.5) * 2);
 
       world.addBody(body);
       scene.add(mesh);
@@ -214,19 +214,9 @@
       beanBodies.push(body);
     }
 
-    function randomDropPosition() {
-      const margin = 1.2;
-      const range = boundarySize - margin;
-      return {
-        x: (Math.random() * 2 - 1) * range,
-        z: (Math.random() * 2 - 1) * range,
-      };
-    }
-
     function dropBeans(count = CONFIG.beansPerRedeem) {
       for (let i = 0; i < count; i += 1) {
-        const { x, z } = randomDropPosition();
-        spawnBean({ x, z });
+        spawnBean();
       }
     }
 
