@@ -209,8 +209,8 @@
         material = new THREE.MeshStandardMaterial({
           color: baseColor,
           map: texture,
-          metalness: 0.9, // Very metallic
-          roughness: 0.2, // Shiny
+          metalness: 0.3, // Reduced from 0.9 to avoid "black gold" without envMap
+          roughness: 0.1, // Very shiny
         });
       } else {
         baseColor = randomPintoBaseColor();
