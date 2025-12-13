@@ -1,9 +1,35 @@
+import os
+
+from dotenv import load_dotenv
+
+import certifi
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DOTENV_PATH = os.getenv('BDS_ENV_FILE') or os.path.join(BASE_DIR, '.env')
+load_dotenv(dotenv_path=DOTENV_PATH, override=False)
+
+if not os.getenv('SSL_CERT_FILE'):
+    os.environ['SSL_CERT_FILE'] = certifi.where()
+
+BDS_DEBUG = os.getenv('BDS_DEBUG', '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+APP_ID = os.getenv('TWITCH_APP_ID', '')
+APP_SECRET = os.getenv('TWITCH_APP_SECRET', '')
+TARGET_CHANNEL = os.getenv('TWITCH_TARGET_CHANNEL', '')
+LOCAL_WS_PORT = int(os.getenv('LOCAL_WS_PORT', '8765'))
+BDS_RELAY_ONLY = os.getenv('BDS_RELAY_ONLY', '').strip().lower() in {'1', 'true', 'yes', 'on'}
+
+if BDS_DEBUG:
+    print(f"Config file: {DOTENV_PATH}")
+    print(f"TWITCH_APP_ID set: {bool(APP_ID)}")
+    print(f"TWITCH_APP_SECRET set: {bool(APP_SECRET)}")
+    print(f"TWITCH_TARGET_CHANNEL set: {bool(TARGET_CHANNEL)}")
+    print(f"LOCAL_WS_PORT: {LOCAL_WS_PORT}")
+    print(f"BDS_RELAY_ONLY: {BDS_RELAY_ONLY}")
+
 import asyncio
 import json
-import os
-import certifi
 import websockets
-from dotenv import load_dotenv
 from twitchAPI.twitch import Twitch
 from twitchAPI.oauth import UserAuthenticator
 from twitchAPI.type import AuthScope
@@ -12,16 +38,6 @@ from twitchAPI.eventsub.websocket import EventSubWebsocket
 # =====================================================
 # CONFIGURATION
 # Get these from https://dev.twitch.tv/console
-# =====================================================
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DOTENV_PATH = os.getenv('BDS_ENV_FILE') or os.path.join(BASE_DIR, '.env')
-load_dotenv(dotenv_path=DOTENV_PATH, override=False)
-
-APP_ID = os.getenv('TWITCH_APP_ID', '')
-APP_SECRET = os.getenv('TWITCH_APP_SECRET', '')
-TARGET_CHANNEL = os.getenv('TWITCH_TARGET_CHANNEL', '')
-LOCAL_WS_PORT = int(os.getenv('LOCAL_WS_PORT', '8765'))
-BDS_RELAY_ONLY = os.getenv('BDS_RELAY_ONLY', '').strip().lower() in {'1', 'true', 'yes', 'on'}
 # =====================================================
 
 connected_clients = set()
@@ -53,9 +69,6 @@ async def on_redemption(data):
             await asyncio.wait(tasks)
 
 async def main():
-    if not os.getenv('SSL_CERT_FILE'):
-        os.environ['SSL_CERT_FILE'] = certifi.where()
-
     # 1. Setup Local WebSocket Server
     print(f"Starting local relay server on port {LOCAL_WS_PORT}...")
     ws_server = await websockets.serve(ws_handler, "localhost", LOCAL_WS_PORT)
@@ -83,8 +96,12 @@ async def main():
     await twitch.set_user_authentication(token, target_scopes, refresh_token)
 
     # 4. Get User ID
-    user = await twitch.get_users(logins=[TARGET_CHANNEL])
-    user_id = user.data[0].id
+    user_id = None
+    async for u in twitch.get_users(logins=[TARGET_CHANNEL]):
+        user_id = u.id
+        break
+    if not user_id:
+        raise RuntimeError(f'Could not find Twitch user for login: {TARGET_CHANNEL}')
     print(f"Listening for events on channel: {TARGET_CHANNEL} (ID: {user_id})")
 
     # 5. Start EventSub (WebSocket)
