@@ -1,0 +1,462 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bean Delivery System</title>
+  <style>
+    :root {
+      color-scheme: dark;
+    }
+
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: transparent;
+    }
+
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #overlay-canvas {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+
+    #status {
+      position: fixed;
+      top: 0.75rem;
+      left: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      background: rgba(0, 0, 0, 0.35);
+      color: #d7f9ff;
+      font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+      font-size: 0.9rem;
+      border-radius: 0.5rem;
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(8px);
+      letter-spacing: 0.02em;
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      display: none;
+    }
+
+    #status strong {
+      color: #ffb347;
+      font-weight: 700;
+    }
+
+    #status button {
+      margin-left: 0.75rem;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      background: rgba(255, 255, 255, 0.05);
+      color: #f1f5f9;
+      border-radius: 999px;
+      padding: 0.35rem 0.9rem;
+      cursor: pointer;
+      transition: all 150ms ease;
+      font-weight: 600;
+    }
+
+    #status button:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+  </style>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+
+<body>
+  <div id="status" aria-live="polite"></div>
+  <canvas id="overlay-canvas"></canvas>
+
+  <script type="module">
+    import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
+    import { FontLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/FontLoader.js";
+    import { TextGeometry } from "https://unpkg.com/three@0.160.0/examples/jsm/geometries/TextGeometry.js";
+    import * as CANNON from "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js";
+
+    const CONFIG = {
+      rewardName: "FULL BEANS", // Match this to your Twitch reward name
+      websocketUrl: `ws://${new URLSearchParams(window.location.search).get('ws') || window.location.hostname || 'localhost'}:8765`,
+      beansPerRedeem: 40,
+    };
+
+    const canvas = document.getElementById("overlay-canvas");
+    const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setClearColor(0x000000, 0);
+
+    const scene = new THREE.Scene();
+    const camera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.1, 100);
+    camera.position.set(0, 0, 20);
+    camera.lookAt(0, 0, 0);
+
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+    const keyLight = new THREE.DirectionalLight(0xffffff, 1.1);
+    keyLight.position.set(-5, 8, 8);
+    const rimLight = new THREE.DirectionalLight(0xffd2a8, 0.6);
+    rimLight.position.set(6, 7, -6);
+    scene.add(ambientLight, keyLight, rimLight);
+
+    const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
+    world.broadphase = new CANNON.SAPBroadphase(world);
+    world.defaultContactMaterial.friction = 0.35;
+    world.defaultContactMaterial.restitution = 0.25;
+
+    const beanMaterial = new CANNON.Material("bean");
+    const groundMaterial = new CANNON.Material("ground");
+    const beanGroundContact = new CANNON.ContactMaterial(beanMaterial, groundMaterial, {
+      friction: 0.45,
+      restitution: 0.28,
+    });
+    world.addContactMaterial(beanGroundContact);
+
+    const groundBody = new CANNON.Body({ mass: 0, material: groundMaterial });
+    groundBody.addShape(new CANNON.Plane());
+    groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+    groundBody.position.set(0, -4, 0);
+    world.addBody(groundBody);
+
+    const boundarySize = 8;
+    const createWall = (rotationY, offsetX) => {
+      const wall = new CANNON.Body({ mass: 0, material: groundMaterial });
+      wall.addShape(new CANNON.Plane());
+      wall.quaternion.setFromEuler(0, rotationY, 0);
+      wall.position.set(offsetX, 0, 0);
+      world.addBody(wall);
+    };
+    createWall(-Math.PI / 2, boundarySize);   // Right wall: normal points -X (inward)
+    createWall(Math.PI / 2, -boundarySize);   // Left wall: normal points +X (inward)
+
+    const beanMeshes = [];
+    const beanBodies = [];
+    const textMeshes = [];
+    const textBodies = [];
+    let loadedFont = null;
+
+    // Load font for 3D text
+    const fontLoader = new FontLoader();
+    fontLoader.load(
+      "https://unpkg.com/three@0.160.0/examples/fonts/helvetiker_bold.typeface.json",
+      (font) => { loadedFont = font; }
+    );
+    const beanGeometry = new THREE.CapsuleGeometry(0.3, 0.6, 10, 16);
+
+    function randomPintoBaseColor() {
+      const hue = 25 + Math.random() * 8; // warm light-brown range
+      const saturation = 0.35 + Math.random() * 0.12;
+      const lightness = 0.62 + Math.random() * 0.1;
+      const color = new THREE.Color();
+      color.setHSL(hue / 360, saturation, lightness);
+      return color;
+    }
+
+    function createPintoTexture(baseColor) {
+      const size = 128;
+      const canvasTex = document.createElement("canvas");
+      canvasTex.width = canvasTex.height = size;
+      const ctx = canvasTex.getContext("2d");
+
+      ctx.fillStyle = `#${baseColor.getHexString()}`;
+      ctx.fillRect(0, 0, size, size);
+
+      const spotCount = 6 + Math.floor(Math.random() * 7);
+      for (let i = 0; i < spotCount; i += 1) {
+        const darker = baseColor.clone().offsetHSL(0, 0, -0.12 - Math.random() * 0.12);
+        ctx.fillStyle = `#${darker.getHexString()}`;
+        const x = Math.random() * size;
+        const y = Math.random() * size;
+        const w = 16 + Math.random() * 32;
+        const h = 10 + Math.random() * 24;
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate((Math.random() - 0.5) * Math.PI);
+        ctx.beginPath();
+        ctx.ellipse(0, 0, w, h, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+      }
+
+      const texture = new THREE.CanvasTexture(canvasTex);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.anisotropy = 4;
+      return texture;
+    }
+
+    function createBeanMesh() {
+      const baseColor = randomPintoBaseColor();
+      const texture = createPintoTexture(baseColor);
+      const material = new THREE.MeshStandardMaterial({
+        color: baseColor,
+        map: texture,
+        metalness: 0.1,
+        roughness: 0.4,
+      });
+      const mesh = new THREE.Mesh(beanGeometry, material);
+      const randomScale = 0.9 + Math.random() * 0.4;
+      mesh.scale.set(randomScale, randomScale, randomScale * (0.9 + Math.random() * 0.2));
+      mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      mesh.castShadow = false;
+      return mesh;
+    }
+
+    function spawnBean({ x = 0, y = 5, z = 0 } = {}) {
+      const mesh = createBeanMesh();
+      const radius = 0.34 * mesh.scale.x;
+      const body = new CANNON.Body({
+        mass: 0.6,
+        shape: new CANNON.Sphere(radius),
+        material: beanMaterial,
+        linearDamping: 0.3,
+        angularDamping: 0.5,
+      });
+
+      body.position.set(
+        x + (Math.random() - 0.5) * 0.8,
+        y + Math.random() * 0.5,
+        0
+      );
+      body.angularVelocity.set((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5);
+      body.velocity.set((Math.random() - 0.5) * 0.3, 0, 0);
+
+      world.addBody(body);
+      scene.add(mesh);
+
+      beanMeshes.push(mesh);
+      beanBodies.push(body);
+
+      // Remove bean after 1 minute
+      setTimeout(() => {
+        const idx = beanMeshes.indexOf(mesh);
+        if (idx !== -1) {
+          beanMeshes.splice(idx, 1);
+          beanBodies.splice(idx, 1);
+          world.removeBody(body);
+          scene.remove(mesh);
+          mesh.geometry.dispose();
+          mesh.material.map?.dispose();
+          mesh.material.dispose();
+        }
+      }, 60000);
+    }
+
+    function dropBeans(count = CONFIG.beansPerRedeem, showText = true) {
+      // Pick a random drop point along the top of the screen
+      const dropX = (Math.random() - 0.5) * 12;  // Random x within visible area
+      for (let i = 0; i < count; i += 1) {
+        setTimeout(() => spawnBean({ x: dropX }), i * 80);
+      }
+
+      if (showText) {
+        // Drop the "FULL BEANS" text
+        spawnText();
+      }
+    }
+
+    function spawnText() {
+      if (!loadedFont) return;
+
+      const textGeo = new TextGeometry("FULL BEANS", {
+        font: loadedFont,
+        size: 0.8,
+        height: 2.8,
+        curveSegments: 8,
+        bevelEnabled: true,
+        bevelThickness: 0.02,
+        bevelSize: 0.01,
+        bevelSegments: 4,
+      });
+      textGeo.computeBoundingBox();
+      textGeo.center();
+      textGeo.computeVertexNormals();
+
+      const whiteMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        metalness: 0.2,
+        roughness: 0.3,
+        side: THREE.DoubleSide,
+      });
+      const goldMat = new THREE.MeshStandardMaterial({
+        color: 0xffd700,
+        metalness: 0.3,
+        roughness: 0.4,
+        side: THREE.DoubleSide,
+      });
+
+      // TextGeometry material order: index 0 = sides, index 1 = front/back faces
+      const textMesh = new THREE.Mesh(textGeo, [whiteMat, goldMat]);
+      scene.add(textMesh);
+
+      const bbox = textGeo.boundingBox;
+      const halfExtents = new CANNON.Vec3(
+        (bbox.max.x - bbox.min.x) / 2,
+        (bbox.max.y - bbox.min.y) / 2,
+        (bbox.max.z - bbox.min.z) / 2
+      );
+      const textBody = new CANNON.Body({
+        mass: 2,
+        shape: new CANNON.Box(halfExtents),
+        material: beanMaterial,
+        linearDamping: 0.3,
+        angularDamping: 0.5,
+      });
+      textBody.position.set((Math.random() - 0.5) * 6, 6, 0);
+      textBody.angularVelocity.set(
+        (Math.random() - 0.5) * 0.3,
+        (Math.random() - 0.5) * 0.3,
+        (Math.random() - 0.5) * 0.3
+      );
+      world.addBody(textBody);
+
+      textMeshes.push(textMesh);
+      textBodies.push(textBody);
+
+      // Remove after 1 minute
+      setTimeout(() => {
+        const idx = textMeshes.indexOf(textMesh);
+        if (idx !== -1) {
+          textMeshes.splice(idx, 1);
+          textBodies.splice(idx, 1);
+          world.removeBody(textBody);
+          scene.remove(textMesh);
+          textGeo.dispose();
+          whiteMat.dispose();
+          goldMat.dispose();
+        }
+      }, 60000);
+    }
+
+    function resizeRenderer() {
+      const { innerWidth, innerHeight } = window;
+      const aspect = innerWidth / innerHeight;
+      const frustumHeight = 10;
+      const frustumWidth = frustumHeight * aspect;
+      camera.left = -frustumWidth / 2;
+      camera.right = frustumWidth / 2;
+      camera.top = frustumHeight / 2;
+      camera.bottom = -frustumHeight / 2;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    }
+
+    resizeRenderer();
+    window.addEventListener("resize", resizeRenderer);
+
+    function animate() {
+      requestAnimationFrame(animate);
+      world.step(1 / 60);
+      for (let i = 0; i < beanMeshes.length; i += 1) {
+        const mesh = beanMeshes[i];
+        const body = beanBodies[i];
+        mesh.position.copy(body.position);
+        mesh.quaternion.copy(body.quaternion);
+      }
+      for (let i = 0; i < textMeshes.length; i += 1) {
+        const mesh = textMeshes[i];
+        const body = textBodies[i];
+        mesh.position.copy(body.position);
+        mesh.quaternion.copy(body.quaternion);
+      }
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    const statusEl = document.getElementById("status");
+    function setStatus(text, type = "info") {
+      statusEl.style.display = text ? "block" : "none";
+      statusEl.textContent = text;
+      if (type === "success") {
+        statusEl.innerHTML = `<strong>Connected</strong> · ${text}`;
+      } else if (type === "error") {
+        statusEl.innerHTML = `<strong>Error</strong> · ${text}`;
+      }
+    }
+
+    function handleRedemption(data = {}) {
+      // Handle Cheer (Bits)
+      if (data.type === "cheer") {
+        dropBeans(data.beans, data.showText);
+        setStatus(`Cheer: ${data.beans / 2} bits`, "success");
+        return;
+      }
+
+      const reward = data.reward || data.rewardTitle || data.title;
+      if (!reward) return;
+      if (reward.toLowerCase() !== CONFIG.rewardName.toLowerCase()) return;
+      dropBeans(CONFIG.beansPerRedeem, true);
+      setStatus(`Redeem received: ${reward}`, "success");
+    }
+
+    window.addEventListener("bean:redeem", (event) => {
+      handleRedemption(event.detail || {});
+    });
+
+    function connectWebSocket() {
+      if (!CONFIG.websocketUrl) return;
+      const socket = new WebSocket(CONFIG.websocketUrl);
+      socket.addEventListener("open", () => setStatus(`Listening for “${CONFIG.rewardName}”`, "success"));
+      socket.addEventListener("close", () => setStatus("Socket closed; retrying in 10s", "error"));
+      socket.addEventListener("error", () => setStatus("WebSocket error", "error"));
+      socket.addEventListener("message", (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          handleRedemption(payload);
+        } catch (error) {
+          console.warn("Invalid message", error);
+        }
+      });
+
+      socket.addEventListener("close", () => {
+        setTimeout(connectWebSocket, 10_000);
+      });
+    }
+
+    connectWebSocket();
+
+    function setupDebugControls() {
+      const instructions = document.createElement("div");
+      instructions.textContent = "Press B to drop beans · Click to test";
+      instructions.style.display = "inline";
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "Test redeem";
+      button.addEventListener("click", () => dropBeans());
+      statusEl.innerHTML = "Debug mode · ";
+      statusEl.appendChild(instructions);
+      statusEl.appendChild(button);
+      statusEl.style.display = "block";
+
+      window.addEventListener("keydown", (event) => {
+        if (event.key.toLowerCase() === "b") {
+          dropBeans();
+        }
+      });
+
+      window.addEventListener("click", () => dropBeans());
+    }
+
+    if (window.location.search.includes("debug")) {
+      setupDebugControls();
+    }
+  </script>
+</body>
+
+</html>
