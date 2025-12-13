@@ -200,15 +200,29 @@
       return texture;
     }
 
-    function createBeanMesh() {
-      const baseColor = randomPintoBaseColor();
-      const texture = createPintoTexture(baseColor);
-      const material = new THREE.MeshStandardMaterial({
-        color: baseColor,
-        map: texture,
-        metalness: 0.1,
-        roughness: 0.4,
-      });
+    function createBeanMesh(isGold = false) {
+      let baseColor, texture, material;
+
+      if (isGold) {
+        baseColor = new THREE.Color(0xffd700); // Gold
+        texture = createPintoTexture(baseColor, true); // Use gold-specific texture generation if needed, or just same texture
+        material = new THREE.MeshStandardMaterial({
+          color: baseColor,
+          map: texture,
+          metalness: 0.9, // Very metallic
+          roughness: 0.2, // Shiny
+        });
+      } else {
+        baseColor = randomPintoBaseColor();
+        texture = createPintoTexture(baseColor);
+        material = new THREE.MeshStandardMaterial({
+          color: baseColor,
+          map: texture,
+          metalness: 0.1,
+          roughness: 0.4,
+        });
+      }
+
       const mesh = new THREE.Mesh(beanGeometry, material);
       const randomScale = 0.9 + Math.random() * 0.4;
       mesh.scale.set(randomScale, randomScale, randomScale * (0.9 + Math.random() * 0.2));
@@ -217,8 +231,8 @@
       return mesh;
     }
 
-    function spawnBean({ x = 0, y = 5, z = 0 } = {}) {
-      const mesh = createBeanMesh();
+    function spawnBean({ x = 0, y = 5, z = 0, isGold = false } = {}) {
+      const mesh = createBeanMesh(isGold);
       const radius = 0.34 * mesh.scale.x;
       const body = new CANNON.Body({
         mass: 0.6,
@@ -257,11 +271,19 @@
       }, 60000);
     }
 
-    function dropBeans(count = CONFIG.beansPerRedeem, showText = true) {
+    const goldAudio = new Audio("Windchimes.mp3");
+    goldAudio.volume = 0.7;
+
+    function dropBeans(count = CONFIG.beansPerRedeem, showText = true, isGold = false) {
+      if (isGold) {
+        goldAudio.currentTime = 0;
+        goldAudio.play().catch(e => console.warn("Audio play failed (user interaction needed?):", e));
+      }
+
       // Pick a random drop point along the top of the screen
       const dropX = (Math.random() - 0.5) * 12;  // Random x within visible area
       for (let i = 0; i < count; i += 1) {
-        setTimeout(() => spawnBean({ x: dropX }), i * 80);
+        setTimeout(() => spawnBean({ x: dropX, isGold }), i * 80);
       }
 
       if (showText) {
@@ -393,8 +415,8 @@
     function handleRedemption(data = {}) {
       // Handle Cheer (Bits)
       if (data.type === "cheer") {
-        dropBeans(data.beans, data.showText);
-        setStatus(`Cheer: ${data.beans / 2} bits`, "success");
+        dropBeans(data.beans, data.showText, true);
+        // setStatus(`Cheer: ${data.beans / 2} bits`, "success");
         return;
       }
 
@@ -402,7 +424,7 @@
       if (!reward) return;
       if (reward.toLowerCase() !== CONFIG.rewardName.toLowerCase()) return;
       dropBeans(CONFIG.beansPerRedeem, true);
-      setStatus(`Redeem received: ${reward}`, "success");
+      // setStatus(`Redeem received: ${reward}`, "success");
     }
 
     window.addEventListener("bean:redeem", (event) => {
@@ -412,7 +434,7 @@
     function connectWebSocket() {
       if (!CONFIG.websocketUrl) return;
       const socket = new WebSocket(CONFIG.websocketUrl);
-      socket.addEventListener("open", () => setStatus(`Listening for “${CONFIG.rewardName}”`, "success"));
+      socket.addEventListener("open", () => console.log(`Listening for “${CONFIG.rewardName}”`));
       socket.addEventListener("close", () => setStatus("Socket closed; retrying in 10s", "error"));
       socket.addEventListener("error", () => setStatus("WebSocket error", "error"));
       socket.addEventListener("message", (event) => {
