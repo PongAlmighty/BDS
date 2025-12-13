@@ -1,0 +1,5 @@
+twitchAPI
+websockets
+asyncio
+
+python-dotenv
