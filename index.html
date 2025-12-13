@@ -459,8 +459,8 @@
       instructions.style.display = "inline";
       const button = document.createElement("button");
       button.type = "button";
-      button.textContent = "Test redeem";
-      button.addEventListener("click", () => dropBeans());
+      button.textContent = "Test redeem (Shift=Gold)";
+      button.addEventListener("click", (e) => dropBeans(40, true, e.shiftKey));
       statusEl.innerHTML = "Debug mode · ";
       statusEl.appendChild(instructions);
       statusEl.appendChild(button);
@@ -468,11 +468,14 @@
 
       window.addEventListener("keydown", (event) => {
         if (event.key.toLowerCase() === "b") {
-          dropBeans();
+          dropBeans(40, true, event.shiftKey);
         }
       });
 
-      window.addEventListener("click", () => dropBeans());
+      window.addEventListener("click", (e) => {
+        if (e.target === button) return; // handled by button
+        dropBeans(40, true, e.shiftKey);
+      });
     }
 
     if (window.location.search.includes("debug")) {
