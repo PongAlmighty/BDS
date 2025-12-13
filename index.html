@@ -287,15 +287,16 @@
       }
 
       if (showText) {
-        // Drop the "FULL BEANS" text
-        spawnText();
+        // Drop the text
+        spawnText(isGold);
       }
     }
 
-    function spawnText() {
+    function spawnText(isGold = false) {
       if (!loadedFont) return;
 
-      const textGeo = new TextGeometry("FULL BEANS", {
+      const message = isGold ? "GOLDEN BEANS" : "FULL BEANS";
+      const textGeo = new TextGeometry(message, {
         font: loadedFont,
         size: 0.8,
         height: 2.8,
@@ -413,6 +414,7 @@
     }
 
     function handleRedemption(data = {}) {
+      console.log("Received redemption data:", data); // Debug logging
       // Handle Cheer (Bits)
       if (data.type === "cheer") {
         dropBeans(data.beans, data.showText, true);

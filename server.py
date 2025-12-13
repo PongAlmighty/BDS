@@ -99,7 +99,10 @@ async def main():
 
     # Setup HTTP Server for index.html
     app = web.Application()
-    app.add_routes([web.get('/', http_handler)])
+    app.add_routes([
+        web.get('/', http_handler),
+        web.static('/', BASE_DIR)
+    ])
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 8080)
@@ -180,7 +183,7 @@ async def on_cheer(data):
     print(f"Cheer received: {bits} bits by {user_name}")
     
     beans_count = bits * 2
-    show_text = bits >= 100
+    show_text = True # Always show text for bits to display "GOLDEN BEANS"
     
     if connected_clients:
         payload = json.dumps({
