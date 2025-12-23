@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -9,7 +10,8 @@
       color-scheme: dark;
     }
 
-    html, body {
+    html,
+    body {
       margin: 0;
       padding: 0;
       width: 100%;
@@ -79,6 +81,7 @@
     }
   </script>
 </head>
+
 <body>
   <div id="status" aria-live="polite"></div>
   <canvas id="overlay-canvas"></canvas>
@@ -91,7 +94,7 @@
 
     const CONFIG = {
       rewardName: "FULL BEANS", // Match this to your Twitch reward name
-      websocketUrl: "ws://localhost:8765", // Connects to server.py
+      websocketUrl: `ws://${new URLSearchParams(window.location.search).get('ws') || window.location.hostname || 'localhost'}:8765`,
       beansPerRedeem: 40,
     };
 
@@ -197,15 +200,25 @@
       return texture;
     }
 
-    function createBeanMesh() {
-      const baseColor = randomPintoBaseColor();
-      const texture = createPintoTexture(baseColor);
-      const material = new THREE.MeshStandardMaterial({
-        color: baseColor,
-        map: texture,
-        metalness: 0.1,
-        roughness: 0.4,
-      });
+    function createBeanMesh(isGolden = false) {
+      let material;
+      if (isGolden) {
+        material = new THREE.MeshStandardMaterial({
+          color: 0xffd700,
+          metalness: 0.6,
+          roughness: 0.2,
+        });
+      } else {
+        const baseColor = randomPintoBaseColor();
+        const texture = createPintoTexture(baseColor);
+        material = new THREE.MeshStandardMaterial({
+          color: baseColor,
+          map: texture,
+          metalness: 0.1,
+          roughness: 0.4,
+        });
+      }
+
       const mesh = new THREE.Mesh(beanGeometry, material);
       const randomScale = 0.9 + Math.random() * 0.4;
       mesh.scale.set(randomScale, randomScale, randomScale * (0.9 + Math.random() * 0.2));
@@ -214,8 +227,8 @@
       return mesh;
     }
 
-    function spawnBean({ x = 0, y = 5, z = 0 } = {}) {
-      const mesh = createBeanMesh();
+    function spawnBean({ x = 0, y = 5, z = 0, isGolden = false } = {}) {
+      const mesh = createBeanMesh(isGolden);
       const radius = 0.34 * mesh.scale.x;
       const body = new CANNON.Body({
         mass: 0.6,
@@ -254,13 +267,13 @@
       }, 60000);
     }
 
-    function dropBeans(count = CONFIG.beansPerRedeem, showText = true) {
+    function dropBeans(count = CONFIG.beansPerRedeem, showText = true, isGolden = false) {
       // Pick a random drop point along the top of the screen
       const dropX = (Math.random() - 0.5) * 12;  // Random x within visible area
       for (let i = 0; i < count; i += 1) {
-        setTimeout(() => spawnBean({ x: dropX }), i * 80);
+        setTimeout(() => spawnBean({ x: dropX, isGolden }), i * 80);
       }
-      
+
       if (showText) {
         // Drop the "FULL BEANS" text
         spawnText();
@@ -390,9 +403,9 @@
     function handleRedemption(data = {}) {
       // Handle Cheer (Bits)
       if (data.type === "cheer") {
-         dropBeans(data.beans, data.showText);
-         setStatus(`Cheer: ${data.beans / 2} bits`, "success");
-         return;
+        dropBeans(data.beans, data.showText, true);
+        setStatus(`Cheer: ${data.beans / 2} bits`, "success");
+        return;
       }
 
       const reward = data.reward || data.rewardTitle || data.title;
@@ -455,4 +468,5 @@
     }
   </script>
 </body>
+
 </html>

@@ -34,11 +34,30 @@ from twitchAPI.twitch import Twitch
 from twitchAPI.oauth import UserAuthenticator
 from twitchAPI.type import AuthScope
 from twitchAPI.eventsub.websocket import EventSubWebsocket
+from aiohttp import web
 
 # =====================================================
 # CONFIGURATION
 # Get these from https://dev.twitch.tv/console
 # =====================================================
+
+# =====================================================
+
+TOKEN_FILE = os.path.join(BASE_DIR, 'tokens.json')
+
+def load_tokens():
+    if not os.path.exists(TOKEN_FILE):
+        return None, None
+    try:
+        with open(TOKEN_FILE, 'r') as f:
+            data = json.load(f)
+        return data.get('token'), data.get('refresh_token')
+    except Exception:
+        return None, None
+
+def save_tokens(token, refresh_token):
+    with open(TOKEN_FILE, 'w') as f:
+        json.dump({'token': token, 'refresh_token': refresh_token}, f)
 
 connected_clients = set()
 
@@ -51,6 +70,10 @@ async def ws_handler(websocket):
     finally:
         connected_clients.remove(websocket)
         print(f"Overlay disconnected. (Total: {len(connected_clients)})")
+
+async def http_handler(request):
+    """Serves the index.html file"""
+    return web.FileResponse(os.path.join(BASE_DIR, 'index.html'))
 
 async def on_redemption(data):
     """Callback for when a redemption happens on Twitch"""
@@ -69,9 +92,19 @@ async def on_redemption(data):
             await asyncio.wait(tasks)
 
 async def main():
-    # 1. Setup Local WebSocket Server
+    # 1. Setup Local WebSocket Server (8765) & HTTP Server (8080)
     print(f"Starting local relay server on port {LOCAL_WS_PORT}...")
-    ws_server = await websockets.serve(ws_handler, "localhost", LOCAL_WS_PORT)
+    # Bind to 0.0.0.0 so the Pi is accessible from your PC/OBS
+    ws_server = await websockets.serve(ws_handler, "0.0.0.0", LOCAL_WS_PORT)
+
+    # Setup HTTP Server for index.html
+    app = web.Application()
+    app.add_routes([web.get('/', http_handler)])
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    await site.start()
+    print(f"Serving Overlay on http://0.0.0.0:8080")
 
     if BDS_RELAY_ONLY:
         print("Relay-only mode enabled; not connecting to Twitch.")
@@ -90,10 +123,26 @@ async def main():
     twitch = await Twitch(APP_ID, APP_SECRET)
     
     # 3. Authenticate (will open browser if needed)
+    # 3. Authenticate
+    # Try to load existing tokens to avoid opening a browser on the Pi
     target_scopes = [AuthScope.CHANNEL_READ_REDEMPTIONS, AuthScope.BITS_READ]
-    auth = UserAuthenticator(twitch, target_scopes)
-    token, refresh_token = await auth.authenticate()
-    await twitch.set_user_authentication(token, target_scopes, refresh_token)
+    token, refresh_token = load_tokens()
+    
+    if token and refresh_token:
+        try:
+            await twitch.set_user_authentication(token, target_scopes, refresh_token)
+            print("Using saved authentication tokens.")
+        except Exception as e:
+            print(f"Saved tokens failed ({e}), re-authenticating...")
+            token = None
+
+    if not token:
+        print("Opening browser for Twitch authentication...")
+        auth = UserAuthenticator(twitch, target_scopes)
+        token, refresh_token = await auth.authenticate()
+        await twitch.set_user_authentication(token, target_scopes, refresh_token)
+        save_tokens(token, refresh_token)
+        print("Authentication successful and tokens saved.")
 
     # 4. Get User ID
     user_id = None
@@ -121,6 +170,7 @@ async def main():
     finally:
         await eventsub.stop()
         ws_server.close()
+        await runner.cleanup()
         await twitch.close()
 
 async def on_cheer(data):
