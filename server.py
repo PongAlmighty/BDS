@@ -75,21 +75,51 @@ async def http_handler(request):
     """Serves the index.html file"""
     return web.FileResponse(os.path.join(BASE_DIR, 'index.html'))
 
+async def broadcast(message):
+    if connected_clients:
+        payload = json.dumps(message)
+        tasks = [asyncio.create_task(client.send(payload)) for client in connected_clients]
+        if tasks:
+            await asyncio.wait(tasks)
+
+async def test_cheer_handler(request):
+    bits = int(request.query.get('bits', '100'))
+    user_name = request.query.get('user', 'TestUser')
+    
+    beans_count = bits * 2
+    show_text = bits >= 100
+    
+    await broadcast({
+        "type": "cheer",
+        "user": user_name,
+        "beans": beans_count,
+        "showText": show_text
+    })
+    return web.Response(text=f"Simulated cheer: {bits} bits from {user_name}")
+
+async def test_redemption_handler(request):
+    reward = request.query.get('reward', 'FULL BEANS')
+    user_name = request.query.get('user', 'TestUser')
+    
+    await broadcast({
+        "reward": reward,
+        "user": user_name
+    })
+    return web.Response(text=f"Simulated redemption: {reward} from {user_name}")
+
 async def on_redemption(data):
     """Callback for when a redemption happens on Twitch"""
     reward_title = data.event.reward.title
     user_name = data.event.user_name
     print(f"Redemption received: {reward_title} by {user_name}")
     
-    if connected_clients:
-        payload = json.dumps({
-            "reward": reward_title,
-            "user": user_name
-        })
-        # Broadcast to all connected overlays
-        tasks = [asyncio.create_task(client.send(payload)) for client in connected_clients]
-        if tasks:
-            await asyncio.wait(tasks)
+    await broadcast({
+        "reward": reward_title,
+        "user": user_name
+    })
+
+async def audio_handler(request):
+    return web.FileResponse(os.path.join(BASE_DIR, 'Windchimes.mp3'))
 
 async def main():
     # 1. Setup Local WebSocket Server (8765) & HTTP Server (8080)
@@ -99,7 +129,12 @@ async def main():
 
     # Setup HTTP Server for index.html
     app = web.Application()
-    app.add_routes([web.get('/', http_handler)])
+    app.add_routes([
+        web.get('/', http_handler),
+        web.get('/Windchimes.mp3', audio_handler),
+        web.get('/test/cheer', test_cheer_handler),
+        web.get('/test/redeem', test_redemption_handler),
+    ])
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 8080)
@@ -182,16 +217,12 @@ async def on_cheer(data):
     beans_count = bits * 2
     show_text = bits >= 100
     
-    if connected_clients:
-        payload = json.dumps({
-            "type": "cheer",
-            "user": user_name,
-            "beans": beans_count,
-            "showText": show_text
-        })
-        tasks = [asyncio.create_task(client.send(payload)) for client in connected_clients]
-        if tasks:
-            await asyncio.wait(tasks)
+    await broadcast({
+        "type": "cheer",
+        "user": user_name,
+        "beans": beans_count,
+        "showText": show_text
+    })
 
 
 if __name__ == "__main__":

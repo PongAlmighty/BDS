@@ -1,0 +1,11 @@
+services:
+  bds:
+    build: .
+    container_name: bds
+    ports:
+      - "8080:8080"
+      - "8765:8765"
+    volumes:
+      - ./tokens.json:/app/tokens.json
+      - ./.env:/app/.env
+    restart: unless-stopped

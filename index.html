@@ -95,7 +95,7 @@
     const CONFIG = {
       rewardName: "FULL BEANS", // Match this to your Twitch reward name
       websocketUrl: `ws://${new URLSearchParams(window.location.search).get('ws') || window.location.hostname || 'localhost'}:8765`,
-      beansPerRedeem: 40,
+      beansPerRedeem: 100,
     };
 
     const canvas = document.getElementById("overlay-canvas");
@@ -267,23 +267,45 @@
       }, 60000);
     }
 
-    function dropBeans(count = CONFIG.beansPerRedeem, showText = true, isGolden = false) {
+    const windchimes = new Audio("Windchimes.mp3");
+    windchimes.volume = 0.5;
+
+    function playAudio() {
+      windchimes.currentTime = 0;
+      windchimes.play().catch((e) => console.warn("Audio playback failed:", e));
+    }
+
+    function dropBeans(count = CONFIG.beansPerRedeem, showText = true, isGolden = false, customText = null) {
       // Pick a random drop point along the top of the screen
       const dropX = (Math.random() - 0.5) * 12;  // Random x within visible area
+
+      // Speed up drops if there are many beans
+      // Target max duration of ~8 seconds, or 80ms per bean, whichever is faster
+      // Minimum interval 5ms to avoid freezing
+      const maxDuration = 8000;
+      const calculatedInterval = maxDuration / count;
+      const interval = Math.max(5, Math.min(80, calculatedInterval));
+
       for (let i = 0; i < count; i += 1) {
-        setTimeout(() => spawnBean({ x: dropX, isGolden }), i * 80);
+        setTimeout(() => spawnBean({ x: dropX, isGolden }), i * interval);
       }
 
       if (showText) {
-        // Drop the "FULL BEANS" text
-        spawnText();
+        // Drop the text
+        const textToSpawn = customText || (isGolden ? "GOLDEN BEANS" : CONFIG.rewardName);
+        spawnText(textToSpawn);
+
+        // Play sound only if it's a golden drop and text is shown (>= 100 bits)
+        if (isGolden) {
+          playAudio();
+        }
       }
     }
 
-    function spawnText() {
+    function spawnText(text = "FULL BEANS") {
       if (!loadedFont) return;
 
-      const textGeo = new TextGeometry("FULL BEANS", {
+      const textGeo = new TextGeometry(text, {
         font: loadedFont,
         size: 0.8,
         height: 2.8,
@@ -391,7 +413,8 @@
 
     const statusEl = document.getElementById("status");
     function setStatus(text, type = "info") {
-      statusEl.style.display = text ? "block" : "none";
+      // statusEl.style.display = text ? "block" : "none"; // Kept hidden as per user request
+      console.log(`[${type.toUpperCase()}] ${text}`);
       statusEl.textContent = text;
       if (type === "success") {
         statusEl.innerHTML = `<strong>Connected</strong> · ${text}`;
@@ -404,7 +427,7 @@
       // Handle Cheer (Bits)
       if (data.type === "cheer") {
         dropBeans(data.beans, data.showText, true);
-        setStatus(`Cheer: ${data.beans / 2} bits`, "success");
+        setStatus(`Cheer: ${data.beans} bits`, "success");
         return;
       }
 
