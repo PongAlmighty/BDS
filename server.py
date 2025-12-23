@@ -1,8 +1,13 @@
 import os
+import logging
 
 from dotenv import load_dotenv
 
 import certifi
+
+# Enable logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.getLogger('twitchAPI').setLevel(logging.DEBUG)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DOTENV_PATH = os.getenv('BDS_ENV_FILE') or os.path.join(BASE_DIR, '.env')
@@ -75,6 +80,10 @@ async def http_handler(request):
     """Serves the index.html file"""
     return web.FileResponse(os.path.join(BASE_DIR, 'index.html'))
 
+async def audio_handler(request):
+    """Serves the Windchimes.mp3 file"""
+    return web.FileResponse(os.path.join(BASE_DIR, 'Windchimes.mp3'))
+
 async def on_redemption(data):
     """Callback for when a redemption happens on Twitch"""
     reward_title = data.event.reward.title
@@ -99,7 +108,10 @@ async def main():
 
     # Setup HTTP Server for index.html
     app = web.Application()
-    app.add_routes([web.get('/', http_handler)])
+    app.add_routes([
+        web.get('/', http_handler),
+        web.get('/Windchimes.mp3', audio_handler)
+    ])
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, '0.0.0.0', 8080)
@@ -157,6 +169,11 @@ async def main():
     eventsub = EventSubWebsocket(twitch)
     eventsub.start()
     
+    # Print Session ID for Twitch CLI
+    if eventsub.active_session:
+        print(f"\n!!! EventSub Session ID: {eventsub.active_session.id} !!!\n")
+        print(f"To test with Twitch CLI: twitch event trigger cheer --transport=websocket --session-id={eventsub.active_session.id}\n")
+
     # 6. Subscribe to Channel Points and Cheers
     await eventsub.listen_channel_points_custom_reward_redemption_add(user_id, on_redemption)
     await eventsub.listen_channel_cheer(user_id, on_cheer)

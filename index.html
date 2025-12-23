@@ -36,6 +36,7 @@
 
     #status {
       position: fixed;
+      z-index: 100;
       top: 0.75rem;
       left: 0.75rem;
       padding: 0.5rem 0.75rem;
@@ -84,6 +85,7 @@
 
 <body>
   <div id="status" aria-live="polite"></div>
+  <audio id="windchimes" src="Windchimes.mp3" preload="auto"></audio>
   <canvas id="overlay-canvas"></canvas>
 
   <script type="module">
@@ -99,6 +101,7 @@
     };
 
     const canvas = document.getElementById("overlay-canvas");
+    const windchimes = document.getElementById("windchimes");
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.setClearColor(0x000000, 0);
@@ -268,6 +271,10 @@
     }
 
     function dropBeans(count = CONFIG.beansPerRedeem, showText = true, isGolden = false) {
+      if (isGolden) {
+        windchimes.currentTime = 0;
+        windchimes.play().catch((e) => console.warn("Audio play failed", e));
+      }
       // Pick a random drop point along the top of the screen
       const dropX = (Math.random() - 0.5) * 12;  // Random x within visible area
       for (let i = 0; i < count; i += 1) {
@@ -449,9 +456,17 @@
       button.type = "button";
       button.textContent = "Test redeem";
       button.addEventListener("click", () => dropBeans());
+
+      const cheerButton = document.createElement("button");
+      cheerButton.type = "button";
+      cheerButton.textContent = "Test cheer (100 bits)";
+      cheerButton.style.marginLeft = "0.5rem";
+      cheerButton.addEventListener("click", () => dropBeans(200, true, true));
+
       statusEl.innerHTML = "Debug mode · ";
       statusEl.appendChild(instructions);
       statusEl.appendChild(button);
+      statusEl.appendChild(cheerButton);
       statusEl.style.display = "block";
 
       window.addEventListener("keydown", (event) => {
