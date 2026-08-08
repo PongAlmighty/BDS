@@ -83,7 +83,12 @@ async def ws_handler(websocket):
 
 async def http_handler(request):
     """Serves the index.html file"""
-    return web.FileResponse(os.path.join(BASE_DIR, 'index.html'))
+    # No caching: OBS browser sources hold onto a cached page across restarts, so
+    # a rebuilt overlay keeps running the old JS until someone clears the cache by
+    # hand. Costs nothing here -- it is one small file over localhost.
+    return web.FileResponse(os.path.join(BASE_DIR, 'index.html'), headers={
+        'Cache-Control': 'no-store, no-cache, must-revalidate',
+    })
 
 async def broadcast(message):
     if connected_clients:
@@ -144,6 +149,9 @@ async def audio_handler(request):
     return web.FileResponse(os.path.join(BASE_DIR, 'Windchimes.mp3'))
 
 async def nut_handler(request):
+    # Only the nut-aware overlay asks for this, so the log line doubles as proof
+    # that a browser source is running current JS rather than a cached old page.
+    print("nut.obj requested -- overlay is running the current page")
     return web.FileResponse(os.path.join(BASE_DIR, 'nut.obj'))
 
 async def watch_kiosk_corners():
