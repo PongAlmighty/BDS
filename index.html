@@ -471,7 +471,7 @@
     function handleRedemption(data = {}) {
       // Corner hit on the StrangerTV kiosk -- drops nuts, not beans
       if (data.type === "nut") {
-        dropBeans(data.count, data.showText, false, data.text || "CORNER!", true);
+        dropBeans(data.count, data.showText, false, data.text || "CORNER HIT!", true);
         setStatus(`Corner hit: ${data.count} nuts`, "success");
         return;
       }

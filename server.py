@@ -26,7 +26,7 @@ KIOSK_STATUS_URL = os.getenv('KIOSK_STATUS_URL', '').strip()
 KIOSK_POLL_INTERVAL = float(os.getenv('KIOSK_POLL_INTERVAL', '2'))
 CORNER_NUTS = int(os.getenv('CORNER_NUTS', os.getenv('CORNER_BEANS', '120')))
 CORNER_USER = os.getenv('CORNER_USER', 'CORNER')
-CORNER_TEXT = os.getenv('CORNER_TEXT', 'CORNER!')
+CORNER_TEXT = os.getenv('CORNER_TEXT', 'CORNER HIT!')
 
 if BDS_DEBUG:
     print(f"Config file: {DOTENV_PATH}")
