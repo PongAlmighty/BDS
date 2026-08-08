@@ -3,8 +3,8 @@ services:
     build: .
     container_name: bds
     ports:
-      - "8080:8080"
-      - "8765:8765"
+      - "18080:18080"
+      - "18765:18765"
     volumes:
       - ./tokens.json:/app/tokens.json
       - ./.env:/app/.env

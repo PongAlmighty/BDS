@@ -137,9 +137,9 @@ async def main():
     ])
     runner = web.AppRunner(app)
     await runner.setup()
-    site = web.TCPSite(runner, '0.0.0.0', 8080)
+    site = web.TCPSite(runner, '0.0.0.0', 18080)
     await site.start()
-    print(f"Serving Overlay on http://0.0.0.0:8080")
+    print(f"Serving Overlay on http://0.0.0.0:18080")
 
     if BDS_RELAY_ONLY:
         print("Relay-only mode enabled; not connecting to Twitch.")
