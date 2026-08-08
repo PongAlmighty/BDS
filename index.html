@@ -90,6 +90,7 @@
     import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
     import { FontLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/FontLoader.js";
     import { TextGeometry } from "https://unpkg.com/three@0.160.0/examples/jsm/geometries/TextGeometry.js";
+    import { OBJLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/OBJLoader.js";
     import * as CANNON from "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js";
 
     const CONFIG = {
@@ -159,6 +160,26 @@
     );
     const beanGeometry = new THREE.CapsuleGeometry(0.3, 0.6, 10, 16);
 
+    // A real 1/4-20 hex nut, threads stripped out -- they are 95% of the source
+    // triangles and invisible at this size. Normalised to a 1.0 bounding box by
+    // the exporter, so NUT_SIZE is just its across-corners width in world units.
+    const NUT_SIZE = 0.85;
+    let nutGeometry = null;
+    new OBJLoader().load(
+      "nut.obj",
+      (obj) => {
+        obj.traverse((child) => {
+          if (!nutGeometry && child.isMesh) {
+            nutGeometry = child.geometry;
+            nutGeometry.scale(NUT_SIZE, NUT_SIZE, NUT_SIZE);
+          }
+        });
+        if (!nutGeometry) console.warn("nut.obj had no mesh; nuts will fall back to beans");
+      },
+      undefined,
+      (err) => console.warn("nut.obj failed to load; nuts will fall back to beans", err)
+    );
+
     function randomPintoBaseColor() {
       const hue = 25 + Math.random() * 8; // warm light-brown range
       const saturation = 0.35 + Math.random() * 0.12;
@@ -200,6 +221,21 @@
       return texture;
     }
 
+    function createNutMesh() {
+      // Zinc-plated steel: bright, fairly metallic, but not a mirror.
+      const material = new THREE.MeshStandardMaterial({
+        color: 0xc8ccd0,
+        metalness: 0.75,
+        roughness: 0.35,
+      });
+      const mesh = new THREE.Mesh(nutGeometry, material);
+      const s = 0.85 + Math.random() * 0.3;
+      mesh.scale.set(s, s, s);
+      mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      mesh.castShadow = false;
+      return mesh;
+    }
+
     function createBeanMesh(isGolden = false) {
       let material;
       if (isGolden) {
@@ -227,9 +263,14 @@
       return mesh;
     }
 
-    function spawnBean({ x = 0, y = 5, z = 0, isGolden = false } = {}) {
-      const mesh = createBeanMesh(isGolden);
-      const radius = 0.34 * mesh.scale.x;
+    function spawnBean({ x = 0, y = 5, z = 0, isGolden = false, isNut = false } = {}) {
+      const nut = isNut && nutGeometry;          // fall back to beans if it never loaded
+      const mesh = nut ? createNutMesh() : createBeanMesh(isGolden);
+      // Nuts keep a sphere body like the beans. A hexagonal prism would let them
+      // stack flat, but that is convex-vs-convex for every pair and there can be
+      // hundreds on screen. The sphere splits the difference between the nut's
+      // across-flats and its thickness, so they sink slightly rather than hover.
+      const radius = (nut ? 0.35 * NUT_SIZE : 0.34) * mesh.scale.x;
       const body = new CANNON.Body({
         mass: 0.6,
         shape: new CANNON.Sphere(radius),
@@ -260,7 +301,11 @@
           beanBodies.splice(idx, 1);
           world.removeBody(body);
           scene.remove(mesh);
-          mesh.geometry.dispose();
+          // beanGeometry and nutGeometry are shared by every instance -- disposing
+          // them here would yank the buffers out from under the ones still falling.
+          if (mesh.geometry !== beanGeometry && mesh.geometry !== nutGeometry) {
+            mesh.geometry.dispose();
+          }
           mesh.material.map?.dispose();
           mesh.material.dispose();
         }
@@ -275,7 +320,7 @@
       windchimes.play().catch((e) => console.warn("Audio playback failed:", e));
     }
 
-    function dropBeans(count = CONFIG.beansPerRedeem, showText = true, isGolden = false, customText = null) {
+    function dropBeans(count = CONFIG.beansPerRedeem, showText = true, isGolden = false, customText = null, isNut = false) {
       // Pick a random drop point along the top of the screen
       const dropX = (Math.random() - 0.5) * 12;  // Random x within visible area
 
@@ -287,7 +332,7 @@
       const interval = Math.max(5, Math.min(80, calculatedInterval));
 
       for (let i = 0; i < count; i += 1) {
-        setTimeout(() => spawnBean({ x: dropX, isGolden }), i * interval);
+        setTimeout(() => spawnBean({ x: dropX, isGolden, isNut }), i * interval);
       }
 
       if (showText) {
@@ -424,6 +469,13 @@
     }
 
     function handleRedemption(data = {}) {
+      // Corner hit on the StrangerTV kiosk -- drops nuts, not beans
+      if (data.type === "nut") {
+        dropBeans(data.count, data.showText, false, data.text || "CORNER!", true);
+        setStatus(`Corner hit: ${data.count} nuts`, "success");
+        return;
+      }
+
       // Handle Cheer (Bits)
       if (data.type === "cheer") {
         dropBeans(data.beans, data.showText, true);

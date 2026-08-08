@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY server.py .
 COPY index.html .
 COPY Windchimes.mp3 .
+COPY nut.obj .
 
 # Expose ports: 18080 for Web, 18765 for WebSocket
 EXPOSE 18080

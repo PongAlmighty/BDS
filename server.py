@@ -24,8 +24,9 @@ BDS_RELAY_ONLY = os.getenv('BDS_RELAY_ONLY', '').strip().lower() in {'1', 'true'
 # -- so we poll it instead. Empty URL disables the watcher entirely.
 KIOSK_STATUS_URL = os.getenv('KIOSK_STATUS_URL', '').strip()
 KIOSK_POLL_INTERVAL = float(os.getenv('KIOSK_POLL_INTERVAL', '2'))
-CORNER_BEANS = int(os.getenv('CORNER_BEANS', '120'))
+CORNER_NUTS = int(os.getenv('CORNER_NUTS', os.getenv('CORNER_BEANS', '120')))
 CORNER_USER = os.getenv('CORNER_USER', 'CORNER')
+CORNER_TEXT = os.getenv('CORNER_TEXT', 'CORNER!')
 
 if BDS_DEBUG:
     print(f"Config file: {DOTENV_PATH}")
@@ -116,6 +117,18 @@ async def test_redemption_handler(request):
     })
     return web.Response(text=f"Simulated redemption: {reward} from {user_name}")
 
+async def test_nut_handler(request):
+    count = int(request.query.get('count', CORNER_NUTS))
+    await broadcast({
+        "type": "nut",
+        "user": request.query.get('user', CORNER_USER),
+        "count": count,
+        "showText": request.query.get('text', '1') not in {'0', 'false', 'no'},
+        "text": request.query.get('text') if request.query.get('text') not in
+                {None, '1', '0', 'false', 'no'} else CORNER_TEXT,
+    })
+    return web.Response(text=f"Dropped {count} nuts")
+
 async def on_redemption(data):
     """Callback for when a redemption happens on Twitch"""
     reward_title = data.event.reward.title
@@ -129,6 +142,9 @@ async def on_redemption(data):
 
 async def audio_handler(request):
     return web.FileResponse(os.path.join(BASE_DIR, 'Windchimes.mp3'))
+
+async def nut_handler(request):
+    return web.FileResponse(os.path.join(BASE_DIR, 'nut.obj'))
 
 async def watch_kiosk_corners():
     """Drop beans when the StrangerTV kiosk lands its DVD nut in a corner.
@@ -154,12 +170,13 @@ async def watch_kiosk_corners():
                     print(f"Kiosk corner watcher ready (baseline {seen})")
                 elif last is not None and last != seen:
                     seen = last
-                    print(f"CORNER HIT at {last} -- dropping {CORNER_BEANS} beans")
+                    print(f"CORNER HIT at {last} -- dropping {CORNER_NUTS} nuts")
                     await broadcast({
-                        "type": "cheer",
+                        "type": "nut",
                         "user": CORNER_USER,
-                        "beans": CORNER_BEANS,
-                        "showText": False,
+                        "count": CORNER_NUTS,
+                        "showText": True,
+                        "text": CORNER_TEXT,
                     })
             await asyncio.sleep(KIOSK_POLL_INTERVAL)
 
@@ -174,8 +191,10 @@ async def main():
     app.add_routes([
         web.get('/', http_handler),
         web.get('/Windchimes.mp3', audio_handler),
+        web.get('/nut.obj', nut_handler),
         web.get('/test/cheer', test_cheer_handler),
         web.get('/test/redeem', test_redemption_handler),
+        web.get('/test/nut', test_nut_handler),
     ])
     runner = web.AppRunner(app)
     await runner.setup()
