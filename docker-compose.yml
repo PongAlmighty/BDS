@@ -5,6 +5,11 @@ services:
     ports:
       - "18080:18080"
       - "18765:18765"
+    environment:
+      # Drop beans when the StrangerTV kiosk lands its DVD nut in a corner.
+      # Blank this out to disable the watcher.
+      KIOSK_STATUS_URL: http://192.168.0.252:5000/status
+      CORNER_BEANS: "120"
     volumes:
       - ./tokens.json:/app/tokens.json
       - ./.env:/app/.env

@@ -19,6 +19,14 @@ TARGET_CHANNEL = os.getenv('TWITCH_TARGET_CHANNEL', '')
 LOCAL_WS_PORT = int(os.getenv('LOCAL_WS_PORT', '8765'))
 BDS_RELAY_ONLY = os.getenv('BDS_RELAY_ONLY', '').strip().lower() in {'1', 'true', 'yes', 'on'}
 
+# StrangerTV kiosk corner watcher. The kiosk drops beans when its DVD nut lands in a
+# corner, but it cannot reach this machine -- that direction of the network is blocked
+# -- so we poll it instead. Empty URL disables the watcher entirely.
+KIOSK_STATUS_URL = os.getenv('KIOSK_STATUS_URL', '').strip()
+KIOSK_POLL_INTERVAL = float(os.getenv('KIOSK_POLL_INTERVAL', '2'))
+CORNER_BEANS = int(os.getenv('CORNER_BEANS', '120'))
+CORNER_USER = os.getenv('CORNER_USER', 'CORNER')
+
 if BDS_DEBUG:
     print(f"Config file: {DOTENV_PATH}")
     print(f"TWITCH_APP_ID set: {bool(APP_ID)}")
@@ -29,6 +37,7 @@ if BDS_DEBUG:
 
 import asyncio
 import json
+import aiohttp
 import websockets
 from twitchAPI.twitch import Twitch
 from twitchAPI.oauth import UserAuthenticator
@@ -121,6 +130,39 @@ async def on_redemption(data):
 async def audio_handler(request):
     return web.FileResponse(os.path.join(BASE_DIR, 'Windchimes.mp3'))
 
+async def watch_kiosk_corners():
+    """Drop beans when the StrangerTV kiosk lands its DVD nut in a corner.
+
+    The kiosk publishes the hit on its own /status endpoint and we poll it, because
+    the kiosk cannot open a connection to this machine. We adopt whatever is already
+    published on the first successful poll, so restarting BDS never replays an old
+    hit; a hit that happens while BDS is down is simply missed.
+    """
+    seen, have_baseline = None, False
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                async with session.get(KIOSK_STATUS_URL,
+                                       timeout=aiohttp.ClientTimeout(total=5)) as resp:
+                    resp.raise_for_status()
+                    last = (await resp.json()).get('last_corner')
+            except Exception as e:
+                print(f"Kiosk poll failed: {e}")
+            else:
+                if not have_baseline:
+                    seen, have_baseline = last, True
+                    print(f"Kiosk corner watcher ready (baseline {seen})")
+                elif last is not None and last != seen:
+                    seen = last
+                    print(f"CORNER HIT at {last} -- dropping {CORNER_BEANS} beans")
+                    await broadcast({
+                        "type": "cheer",
+                        "user": CORNER_USER,
+                        "beans": CORNER_BEANS,
+                        "showText": False,
+                    })
+            await asyncio.sleep(KIOSK_POLL_INTERVAL)
+
 async def main():
     # 1. Setup Local WebSocket Server (8765) & HTTP Server (8080)
     print(f"Starting local relay server on port {LOCAL_WS_PORT}...")
@@ -140,6 +182,11 @@ async def main():
     site = web.TCPSite(runner, '0.0.0.0', 18080)
     await site.start()
     print(f"Serving Overlay on http://0.0.0.0:18080")
+
+    # Runs in relay-only mode too -- it has nothing to do with Twitch.
+    if KIOSK_STATUS_URL:
+        asyncio.create_task(watch_kiosk_corners())
+        print(f"Watching kiosk corners at {KIOSK_STATUS_URL} every {KIOSK_POLL_INTERVAL}s")
 
     if BDS_RELAY_ONLY:
         print("Relay-only mode enabled; not connecting to Twitch.")
