@@ -14,6 +14,7 @@ A physics-based Twitch overlay that drops 3D beans on your screen when viewers C
 - **StrangerTV Corner Hits (predicted)**: Polls the kiosk's status endpoint and drops 3D hex nuts (not beans) *a few seconds before* its bouncing DVD nut lands in a corner, so the drop is the cue to look up and watch it happen rather than an announcement that you missed it. The kiosk's bounce is deterministic, so it tabulates its own hit times exactly and publishes a `corner_warn` ahead of each one -- this is a lookup, not a guess. Polling rather than push because the kiosk cannot reach this machine. Set `KIOSK_STATUS_URL` to enable, blank to disable.
   - Advance notice is `KIOSK_CORNER_WARN` seconds on the kiosk (default 5). BDS only sees it on its next poll, so the notice actually delivered is between the full lead and lead-minus-`KIOSK_POLL_INTERVAL` -- roughly **3-5 seconds** at the defaults.
   - Set `CORNER_DROP_ON_HIT=1` to also drop on the hit itself (the old behaviour). Off by default, since with the warning enabled it would double-drop.
+  - The warning drops **one nut at `CORNER_WARN_SCALE`x** (default 10) rather than a shower of small ones, so it reads as "look up now" at a glance. The drop point is clamped so an oversized nut cannot spawn overlapping the side walls; past about 15x it is taller than the frustum. Preview it with `/test/warn`.
 - **Optimized Performance**: Drops start at full speed (~8 seconds for a typical drop) and a frame-rate governor stretches the spawn interval if the browser starts to slip, so a huge cheer lands slowly instead of crashing the tab.
 
 ## Known Issues
@@ -44,7 +45,8 @@ All served from port `18080`:
 |---|---|
 | `/test/cheer?bits=100&user=Name` | Golden beans, `bits * 2` of them. `>= 100` bits also shows the banner and plays the windchime. |
 | `/test/redeem?reward=FULL%20BEANS&user=Name` | Pinto beans, fixed at `beansPerRedeem` (100), plus the banner. |
-| `/test/nut?count=120&text=CORNER%20HIT!` | Hex nuts, arbitrary count. `text=0` suppresses the banner. |
+| `/test/nut?count=120&scale=1&text=CORNER%20HIT!` | Hex nuts, arbitrary count. `scale` multiplies nut size. `text=0` suppresses the banner. |
+| `/test/warn` | Fires exactly what a real corner warning fires -- one nut at `CORNER_WARN_SCALE`. |
 
 `/test/cheer` is the only way to request an arbitrary *bean* count -- `/test/redeem` takes no count parameter.
 

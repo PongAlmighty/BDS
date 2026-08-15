@@ -34,6 +34,10 @@ CORNER_TEXT = os.getenv('CORNER_TEXT', 'CORNER INCOMING!')
 # the heads-up to go and watch it happen. Dropping on the hit itself is the old
 # behaviour and is off by default -- with the warning on, it would double-drop.
 CORNER_DROP_ON_HIT = os.getenv('CORNER_DROP_ON_HIT', '').strip().lower() in {'1', 'true', 'yes', 'on'}
+# The warning is a single oversized nut rather than a shower of small ones -- it reads
+# as "look up now" at a glance, which a hundred little ones do not.
+CORNER_WARN_NUTS = int(os.getenv('CORNER_WARN_NUTS', '1'))
+CORNER_WARN_SCALE = float(os.getenv('CORNER_WARN_SCALE', '10'))
 
 if BDS_DEBUG:
     print(f"Config file: {DOTENV_PATH}")
@@ -131,15 +135,30 @@ async def test_redemption_handler(request):
 
 async def test_nut_handler(request):
     count = int(request.query.get('count', CORNER_NUTS))
+    scale = float(request.query.get('scale', '1'))
     await broadcast({
         "type": "nut",
         "user": request.query.get('user', CORNER_USER),
         "count": count,
+        "scale": scale,
         "showText": request.query.get('text', '1') not in {'0', 'false', 'no'},
         "text": request.query.get('text') if request.query.get('text') not in
                 {None, '1', '0', 'false', 'no'} else CORNER_TEXT,
     })
-    return web.Response(text=f"Dropped {count} nuts")
+    return web.Response(text=f"Dropped {count} nuts at {scale}x")
+
+
+async def test_warn_handler(request):
+    """Fire exactly what a real corner warning fires, for checking the look of it."""
+    await broadcast({
+        "type": "nut",
+        "user": CORNER_USER,
+        "count": CORNER_WARN_NUTS,
+        "scale": CORNER_WARN_SCALE,
+        "showText": True,
+        "text": CORNER_TEXT,
+    })
+    return web.Response(text=f"Simulated corner warning: {CORNER_WARN_NUTS} nut(s) at {CORNER_WARN_SCALE}x")
 
 async def on_redemption(data):
     """Callback for when a redemption happens on Twitch"""
@@ -194,11 +213,13 @@ async def watch_kiosk_corners():
                     if warn is not None and warn != seen_warn:
                         seen_warn = warn
                         lead = data.get('corner_warn_lead')
-                        print(f"CORNER INCOMING (kiosk lead {lead}s) -- dropping {CORNER_NUTS} nuts")
+                        print(f"CORNER INCOMING (kiosk lead {lead}s) -- dropping "
+                              f"{CORNER_WARN_NUTS} nut(s) at {CORNER_WARN_SCALE}x")
                         await broadcast({
                             "type": "nut",
                             "user": CORNER_USER,
-                            "count": CORNER_NUTS,
+                            "count": CORNER_WARN_NUTS,
+                            "scale": CORNER_WARN_SCALE,
                             "showText": True,
                             "text": CORNER_TEXT,
                         })
@@ -232,6 +253,7 @@ async def main():
         web.get('/test/cheer', test_cheer_handler),
         web.get('/test/redeem', test_redemption_handler),
         web.get('/test/nut', test_nut_handler),
+        web.get('/test/warn', test_warn_handler),
     ])
     runner = web.AppRunner(app)
     await runner.setup()

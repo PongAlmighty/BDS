@@ -226,15 +226,17 @@
       return texture;
     }
 
-    function createNutMesh() {
+    function createNutMesh(scale = 1) {
       // Zinc-plated steel: bright, fairly metallic, but not a mirror.
       const material = new THREE.MeshStandardMaterial({
         color: 0xc8ccd0,
         metalness: 0.75,
         roughness: 0.35,
       });
+      // Scaling the mesh rather than the geometry keeps nutGeometry shared, which the
+      // despawn path relies on to know it must not dispose the buffers.
       const mesh = new THREE.Mesh(nutGeometry, material);
-      const s = 0.85 + Math.random() * 0.3;
+      const s = (0.85 + Math.random() * 0.3) * scale;
       mesh.scale.set(s, s, s);
       mesh.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
       mesh.castShadow = false;
@@ -268,16 +270,19 @@
       return mesh;
     }
 
-    function spawnBean({ x = 0, y = 5, z = 0, isGolden = false, isNut = false } = {}) {
+    function spawnBean({ x = 0, y = 5, z = 0, isGolden = false, isNut = false, scale = 1 } = {}) {
       const nut = isNut && nutGeometry;          // fall back to beans if it never loaded
-      const mesh = nut ? createNutMesh() : createBeanMesh(isGolden);
+      const mesh = nut ? createNutMesh(scale) : createBeanMesh(isGolden);
       // Nuts keep a sphere body like the beans. A hexagonal prism would let them
       // stack flat, but that is convex-vs-convex for every pair and there can be
       // hundreds on screen. The sphere splits the difference between the nut's
       // across-flats and its thickness, so they sink slightly rather than hover.
       const radius = (nut ? 0.35 * NUT_SIZE : 0.34) * mesh.scale.x;
       const body = new CANNON.Body({
-        mass: 0.6,
+        // Mass climbs with area rather than volume: a scaled-up nut should shove the
+        // beans aside instead of being jostled by them, but a true cube law puts a
+        // 1000:1 mass ratio in front of the solver and it starts to jitter.
+        mass: 0.6 * scale * scale,
         shape: new CANNON.Sphere(radius),
         material: beanMaterial,
         linearDamping: 0.3,
@@ -286,7 +291,9 @@
 
       body.position.set(
         x + (Math.random() - 0.5) * 0.8,
-        y + Math.random() * 0.5,
+        // Big nuts start higher so they fall in from off-screen rather than popping
+        // into view already half-visible. Zero offset at normal size.
+        y + Math.random() * 0.5 + Math.max(0, radius - 0.35),
         0
       );
       body.angularVelocity.set((Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5, (Math.random() - 0.5) * 0.5);
@@ -364,7 +371,7 @@
         const drop = activeDrops[i];
 
         while (drop.remaining > 0 && budget > 0 && now >= drop.nextSpawnAt) {
-          spawnBean({ x: drop.x, isGolden: drop.isGolden, isNut: drop.isNut });
+          spawnBean({ x: drop.x, isGolden: drop.isGolden, isNut: drop.isNut, scale: drop.scale });
           drop.remaining -= 1;
           budget -= 1;
           // Advance from the scheduled time, not from now, so a 16ms frame can
@@ -378,9 +385,14 @@
       }
     }
 
-    function dropBeans(count = CONFIG.beansPerRedeem, showText = true, isGolden = false, customText = null, isNut = false) {
-      // Pick a random drop point along the top of the screen
-      const dropX = (Math.random() - 0.5) * 12;  // Random x within visible area
+    function dropBeans(count = CONFIG.beansPerRedeem, showText = true, isGolden = false, customText = null, isNut = false, scale = 1) {
+      // Pick a random drop point along the top of the screen. A scaled-up nut is wide
+      // enough that the usual +/-6 spread would spawn it overlapping a wall at +/-8,
+      // which pins it against the side instead of letting it fall. Normal-sized drops
+      // are unaffected -- their radius is small enough that the 12 still wins.
+      const widest = (isNut ? 0.35 * NUT_SIZE : 0.34) * 1.15 * scale;
+      const spread = Math.min(12, Math.max(0, boundarySize - widest) * 2);
+      const dropX = (Math.random() - 0.5) * spread;
 
       // Speed up drops if there are many beans
       // Target max duration of ~8 seconds, or 80ms per bean, whichever is faster
@@ -394,6 +406,7 @@
         x: dropX,
         isGolden,
         isNut,
+        scale,
         baseInterval,
         nextSpawnAt: performance.now(),
       });
@@ -552,7 +565,7 @@
     function handleRedemption(data = {}) {
       // Corner hit on the StrangerTV kiosk -- drops nuts, not beans
       if (data.type === "nut") {
-        dropBeans(data.count, data.showText, false, data.text || "CORNER HIT!", true);
+        dropBeans(data.count, data.showText, false, data.text || "CORNER HIT!", true, data.scale || 1);
         setStatus(`Corner hit: ${data.count} nuts`, "success");
         return;
       }
