@@ -11,7 +11,9 @@ A physics-based Twitch overlay that drops 3D beans on your screen when viewers C
   - **< 100 Bits**: Silent golden drop.
   - **>= 100 Bits**: "GOLDEN BEANS" banner + Windchime sound effect.
   - **Redemptions**: "FULL BEANS" banner.
-- **StrangerTV Corner Hits**: Polls the kiosk's status endpoint; when its bouncing DVD nut lands in a corner, drops 3D hex nuts (not beans) with a "CORNER HIT!" banner. Polling rather than push because the kiosk cannot reach this machine. Set `KIOSK_STATUS_URL` to enable, blank to disable.
+- **StrangerTV Corner Hits (predicted)**: Polls the kiosk's status endpoint and drops 3D hex nuts (not beans) *a few seconds before* its bouncing DVD nut lands in a corner, so the drop is the cue to look up and watch it happen rather than an announcement that you missed it. The kiosk's bounce is deterministic, so it tabulates its own hit times exactly and publishes a `corner_warn` ahead of each one -- this is a lookup, not a guess. Polling rather than push because the kiosk cannot reach this machine. Set `KIOSK_STATUS_URL` to enable, blank to disable.
+  - Advance notice is `KIOSK_CORNER_WARN` seconds on the kiosk (default 5). BDS only sees it on its next poll, so the notice actually delivered is between the full lead and lead-minus-`KIOSK_POLL_INTERVAL` -- roughly **3-5 seconds** at the defaults.
+  - Set `CORNER_DROP_ON_HIT=1` to also drop on the hit itself (the old behaviour). Off by default, since with the warning enabled it would double-drop.
 - **Optimized Performance**: Drops start at full speed (~8 seconds for a typical drop) and a frame-rate governor stretches the spawn interval if the browser starts to slip, so a huge cheer lands slowly instead of crashing the tab.
 
 ## Known Issues

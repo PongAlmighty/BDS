@@ -29,7 +29,11 @@ KIOSK_STATUS_URL = os.getenv('KIOSK_STATUS_URL', '').strip()
 KIOSK_POLL_INTERVAL = float(os.getenv('KIOSK_POLL_INTERVAL', '2'))
 CORNER_NUTS = int(os.getenv('CORNER_NUTS', os.getenv('CORNER_BEANS', '120')))
 CORNER_USER = os.getenv('CORNER_USER', 'CORNER')
-CORNER_TEXT = os.getenv('CORNER_TEXT', 'CORNER HIT!')
+CORNER_TEXT = os.getenv('CORNER_TEXT', 'CORNER INCOMING!')
+# The kiosk warns us a few seconds before the nut lands in a corner, so the drop is
+# the heads-up to go and watch it happen. Dropping on the hit itself is the old
+# behaviour and is off by default -- with the warning on, it would double-drop.
+CORNER_DROP_ON_HIT = os.getenv('CORNER_DROP_ON_HIT', '').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 if BDS_DEBUG:
     print(f"Config file: {DOTENV_PATH}")
@@ -158,37 +162,59 @@ async def nut_handler(request):
     return web.FileResponse(os.path.join(BASE_DIR, 'nut.obj'))
 
 async def watch_kiosk_corners():
-    """Drop beans when the StrangerTV kiosk lands its DVD nut in a corner.
+    """Drop nuts just before the StrangerTV kiosk lands its DVD nut in a corner.
 
-    The kiosk publishes the hit on its own /status endpoint and we poll it, because
-    the kiosk cannot open a connection to this machine. We adopt whatever is already
-    published on the first successful poll, so restarting BDS never replays an old
-    hit; a hit that happens while BDS is down is simply missed.
+    The kiosk publishes both an advance warning and the hit itself on its own /status
+    endpoint and we poll it, because the kiosk cannot open a connection to this
+    machine. We adopt whatever is already published on the first successful poll, so
+    restarting BDS never replays an old event; anything that happens while BDS is
+    down is simply missed.
+
+    The warning fires KIOSK_CORNER_WARN seconds ahead (5 by default). Our poll only
+    lands every KIOSK_POLL_INTERVAL, so the notice we actually pass on is somewhere
+    between the full lead and lead-minus-one-interval -- roughly 3-5s at the defaults,
+    which is the point: enough time to look up before it happens.
     """
-    seen, have_baseline = None, False
+    seen_warn, seen_hit, have_baseline = None, None, False
     async with aiohttp.ClientSession() as session:
         while True:
             try:
                 async with session.get(KIOSK_STATUS_URL,
                                        timeout=aiohttp.ClientTimeout(total=5)) as resp:
                     resp.raise_for_status()
-                    last = (await resp.json()).get('last_corner')
+                    data = await resp.json()
             except Exception as e:
                 print(f"Kiosk poll failed: {e}")
             else:
+                warn, hit = data.get('corner_warn'), data.get('last_corner')
                 if not have_baseline:
-                    seen, have_baseline = last, True
-                    print(f"Kiosk corner watcher ready (baseline {seen})")
-                elif last is not None and last != seen:
-                    seen = last
-                    print(f"CORNER HIT at {last} -- dropping {CORNER_NUTS} nuts")
-                    await broadcast({
-                        "type": "nut",
-                        "user": CORNER_USER,
-                        "count": CORNER_NUTS,
-                        "showText": True,
-                        "text": CORNER_TEXT,
-                    })
+                    seen_warn, seen_hit, have_baseline = warn, hit, True
+                    print(f"Kiosk corner watcher ready (baseline warn={seen_warn} hit={seen_hit})")
+                else:
+                    if warn is not None and warn != seen_warn:
+                        seen_warn = warn
+                        lead = data.get('corner_warn_lead')
+                        print(f"CORNER INCOMING (kiosk lead {lead}s) -- dropping {CORNER_NUTS} nuts")
+                        await broadcast({
+                            "type": "nut",
+                            "user": CORNER_USER,
+                            "count": CORNER_NUTS,
+                            "showText": True,
+                            "text": CORNER_TEXT,
+                        })
+                    if hit is not None and hit != seen_hit:
+                        seen_hit = hit
+                        if CORNER_DROP_ON_HIT:
+                            print(f"CORNER HIT at {hit} -- dropping {CORNER_NUTS} nuts")
+                            await broadcast({
+                                "type": "nut",
+                                "user": CORNER_USER,
+                                "count": CORNER_NUTS,
+                                "showText": True,
+                                "text": "CORNER HIT!",
+                            })
+                        else:
+                            print(f"CORNER HIT at {hit} (already announced)")
             await asyncio.sleep(KIOSK_POLL_INTERVAL)
 
 async def main():
