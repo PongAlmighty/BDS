@@ -16,7 +16,10 @@ BDS_DEBUG = os.getenv('BDS_DEBUG', '').strip().lower() in {'1', 'true', 'yes', '
 APP_ID = os.getenv('TWITCH_APP_ID', '')
 APP_SECRET = os.getenv('TWITCH_APP_SECRET', '')
 TARGET_CHANNEL = os.getenv('TWITCH_TARGET_CHANNEL', '')
-LOCAL_WS_PORT = int(os.getenv('LOCAL_WS_PORT', '8765'))
+# 18765 is not really optional -- index.html hardcodes it when building the
+# WebSocket URL and docker-compose maps 18765:18765. Defaulting to anything else
+# means a missing .env yields an overlay that renders but never receives a drop.
+LOCAL_WS_PORT = int(os.getenv('LOCAL_WS_PORT', '18765'))
 BDS_RELAY_ONLY = os.getenv('BDS_RELAY_ONLY', '').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 # StrangerTV kiosk corner watcher. The kiosk drops beans when its DVD nut lands in a

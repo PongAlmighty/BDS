@@ -36,7 +36,7 @@ Twitch authentication requires opening a browser. On a headless Pi, authenticate
    python server.py
    ```
    - It should listen on **0.0.0.0:18765** (WebSocket) and **0.0.0.0:18080** (Web Server).
-   - The WebSocket port comes from `LOCAL_WS_PORT` in `.env` and **must be `18765`** -- the overlay hardcodes it. If the startup log says `port 8765`, your `.env` was not picked up.
+   - The WebSocket port comes from `LOCAL_WS_PORT` in `.env` and **must be `18765`** -- the overlay hardcodes it. This is also the default, so a missing `.env` still works; only an explicit wrong value breaks it.
 
 ### Option B: Docker (Recommended for stability)
 1. Ensure Docker and Docker Compose are installed on your Pi.
@@ -98,6 +98,6 @@ Load the overlay with `?debug` -- `http://<PI_IP>:18080/?debug` -- for a live `f
   - Ensure `Windchimes.mp3` is in the folder.
   - Browser autoplay policy might block sound. Interactions (clicking the overlay) usually unlock it. In OBS, checking "Control Audio via OBS" usually bypasses this.
 - **Connection Refused**: Check your Pi's firewall (allow ports 18765 and 18080).
-- **Overlay loads but nothing ever drops**: The page reached the HTTP server but not the WebSocket relay. Confirm `LOCAL_WS_PORT=18765` in `.env` -- the startup log must say `port 18765`, not `8765`. Set `BDS_DEBUG=1` to print the resolved config, including which `.env` file was actually loaded.
+- **Overlay loads but nothing ever drops**: The page reached the HTTP server but not the WebSocket relay. The startup log must say `port 18765`; if it says anything else, `LOCAL_WS_PORT` is set to a wrong value in `.env`. Set `BDS_DEBUG=1` to print the resolved config, including which `.env` file was actually loaded.
 - **Overlay is completely blank**: Three.js and Cannon-es load from the unpkg CDN at runtime, so the Pi needs outbound internet even though the server is local. See "Known Issues" in [README.md](README.md).
 - **Beans slow to a crawl on a big drop**: Expected. The frame-rate governor stretches the spawn interval below 30fps to keep the browser alive. On a Pi this engages sooner than on a desktop; raise `INTERVAL_THROTTLED` in `index.html` to lower the ceiling further.
