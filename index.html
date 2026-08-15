@@ -87,6 +87,11 @@
   <canvas id="overlay-canvas"></canvas>
 
   <script type="module">
+    // These load from unpkg at runtime, so the overlay needs outbound internet on
+    // every fresh load even though the server is on the LAN. If unpkg is
+    // unreachable the page renders blank with no error banner -- on stream that
+    // looks the same as the overlay just never firing. See "Known Issues" in
+    // README.md for the vendoring fix if this ever bites.
     import * as THREE from "https://unpkg.com/three@0.160.0/build/three.module.js";
     import { FontLoader } from "https://unpkg.com/three@0.160.0/examples/jsm/loaders/FontLoader.js";
     import { TextGeometry } from "https://unpkg.com/three@0.160.0/examples/jsm/geometries/TextGeometry.js";
@@ -320,6 +325,59 @@
       windchimes.play().catch((e) => console.warn("Audio playback failed:", e));
     }
 
+    // ---- Frame-rate governor -------------------------------------------------
+    // Every bean is its own mesh and its own physics body, so a big drop can ask
+    // for more than the world can carry -- 10k at once takes the tab down. Drops
+    // start at full speed and only back off once the frame rate actually slips,
+    // so the common case (100 beans) is untouched.
+    const FPS_FULL_SPEED = 30;      // at or above this, drops spawn at their own pace
+    const FPS_WORST_CASE = 12;      // at or below this, spawn as slowly as we ever will
+    const INTERVAL_HEALTHY = 5;     // ms between beans when there is headroom
+    const INTERVAL_THROTTLED = 65;  // ms between beans when we are struggling
+    const MAX_SPAWNS_PER_FRAME = 40;// a long hitch must not dump the whole backlog at once
+
+    let smoothedFrameMs = 1000 / 60;
+    let lastFrameAt = performance.now();
+    let debugReadout = null;   // only populated in ?debug mode
+    let lastReadoutAt = 0;
+
+    const currentFps = () => 1000 / smoothedFrameMs;
+
+    // The slower of the drop's own pace and whatever the frame rate can afford.
+    // Below FPS_FULL_SPEED this ramps linearly to INTERVAL_THROTTLED, which at a
+    // 60s bean lifetime settles the pile at roughly 15/sec * 60s = ~900 on screen.
+    function throttledInterval(baseInterval) {
+      const strain = Math.min(1, Math.max(0,
+        (FPS_FULL_SPEED - currentFps()) / (FPS_FULL_SPEED - FPS_WORST_CASE)));
+      const paced = INTERVAL_HEALTHY + strain * (INTERVAL_THROTTLED - INTERVAL_HEALTHY);
+      return Math.max(baseInterval, paced);
+    }
+
+    // Drops in flight. Each one meters itself out over successive frames instead
+    // of queueing every spawn up front, which is what lets the rate change mid-drop.
+    const activeDrops = [];
+
+    function pumpDrops(now) {
+      let budget = MAX_SPAWNS_PER_FRAME;
+
+      for (let i = activeDrops.length - 1; i >= 0; i -= 1) {
+        const drop = activeDrops[i];
+
+        while (drop.remaining > 0 && budget > 0 && now >= drop.nextSpawnAt) {
+          spawnBean({ x: drop.x, isGolden: drop.isGolden, isNut: drop.isNut });
+          drop.remaining -= 1;
+          budget -= 1;
+          // Advance from the scheduled time, not from now, so a 16ms frame can
+          // still fit three 5ms spawns. Debt past the budget cap is forgiven
+          // below rather than carried, or we would never catch back up.
+          drop.nextSpawnAt += throttledInterval(drop.baseInterval);
+        }
+
+        if (budget === 0 && drop.nextSpawnAt < now) drop.nextSpawnAt = now;
+        if (drop.remaining <= 0) activeDrops.splice(i, 1);
+      }
+    }
+
     function dropBeans(count = CONFIG.beansPerRedeem, showText = true, isGolden = false, customText = null, isNut = false) {
       // Pick a random drop point along the top of the screen
       const dropX = (Math.random() - 0.5) * 12;  // Random x within visible area
@@ -329,11 +387,16 @@
       // Minimum interval 5ms to avoid freezing
       const maxDuration = 8000;
       const calculatedInterval = maxDuration / count;
-      const interval = Math.max(5, Math.min(80, calculatedInterval));
+      const baseInterval = Math.max(INTERVAL_HEALTHY, Math.min(80, calculatedInterval));
 
-      for (let i = 0; i < count; i += 1) {
-        setTimeout(() => spawnBean({ x: dropX, isGolden, isNut }), i * interval);
-      }
+      activeDrops.push({
+        remaining: Math.max(0, Math.floor(count)),
+        x: dropX,
+        isGolden,
+        isNut,
+        baseInterval,
+        nextSpawnAt: performance.now(),
+      });
 
       if (showText) {
         // Drop the text
@@ -438,6 +501,24 @@
 
     function animate() {
       requestAnimationFrame(animate);
+
+      const now = performance.now();
+      // Clamp so a single stall (tab hidden, GC pause) does not drag the average
+      // into the throttle. 100ms floors the measurement at 10fps, still well
+      // under FPS_WORST_CASE, so a genuine slowdown reaches full strain.
+      const frameMs = Math.min(100, now - lastFrameAt);
+      lastFrameAt = now;
+      smoothedFrameMs = smoothedFrameMs * 0.9 + frameMs * 0.1;
+
+      pumpDrops(now);
+
+      if (debugReadout && now - lastReadoutAt > 250) {
+        lastReadoutAt = now;
+        const queued = activeDrops.reduce((sum, drop) => sum + drop.remaining, 0);
+        debugReadout.textContent =
+          `${currentFps().toFixed(0)} fps · ${beanMeshes.length} on screen · ${queued} queued`;
+      }
+
       world.step(1 / 60);
       for (let i = 0; i < beanMeshes.length; i += 1) {
         const mesh = beanMeshes[i];
@@ -520,6 +601,8 @@
       const instructions = document.createElement("div");
       instructions.textContent = "Press B to drop beans · Click to test";
       instructions.style.display = "inline";
+      debugReadout = document.createElement("span");
+      debugReadout.style.marginLeft = "0.75em";
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = "Test redeem";
@@ -527,6 +610,7 @@
       statusEl.innerHTML = "Debug mode · ";
       statusEl.appendChild(instructions);
       statusEl.appendChild(button);
+      statusEl.appendChild(debugReadout);
       statusEl.style.display = "block";
 
       window.addEventListener("keydown", (event) => {
