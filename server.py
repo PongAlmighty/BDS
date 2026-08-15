@@ -189,7 +189,7 @@ async def watch_kiosk_corners():
             await asyncio.sleep(KIOSK_POLL_INTERVAL)
 
 async def main():
-    # 1. Setup Local WebSocket Server (8765) & HTTP Server (8080)
+    # 1. Setup Local WebSocket Server (18765) & HTTP Server (18080)
     print(f"Starting local relay server on port {LOCAL_WS_PORT}...")
     # Bind to 0.0.0.0 so the Pi is accessible from your PC/OBS
     ws_server = await websockets.serve(ws_handler, "0.0.0.0", LOCAL_WS_PORT)

@@ -31,5 +31,13 @@ See [RASPBERRY_PI_SETUP.md](RASPBERRY_PI_SETUP.md) for installation and running 
 1. Install dependencies: `pip install -r requirements.txt`
 2. Create `.env` with your Twitch App credentials.
 3. Run `python server.py`.
-4. Open `http://localhost:8080` in OBS or your browser.
-5. Test using `http://localhost:8080/test/cheer?bits=100`.
+4. Open `http://localhost:18080` in OBS or your browser.
+5. Test using `http://localhost:18080/test/cheer?bits=100`.
+
+### Ports
+| Port | Purpose | Configurable |
+|---|---|---|
+| `18080` | HTTP -- overlay page, assets, test endpoints | No, hardcoded in `server.py` |
+| `18765` | WebSocket relay the overlay connects to | `LOCAL_WS_PORT`, but see below |
+
+**`LOCAL_WS_PORT` must be `18765`.** The overlay hardcodes that port when building its WebSocket URL, and `docker-compose.yml` maps `18765:18765`. The `?ws=` query parameter overrides only the *host*, not the port, so pointing `LOCAL_WS_PORT` anywhere else leaves the overlay connecting to a port nothing is listening on -- it renders but never receives a drop. Note the fallback in `server.py` is `8765`, which is wrong for this setup; if `.env` is missing or unreadable the relay silently binds the wrong port.
