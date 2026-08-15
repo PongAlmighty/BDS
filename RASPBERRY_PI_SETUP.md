@@ -84,8 +84,20 @@ The server includes built-in test endpoints. Open these URLs in a browser on you
   `http://<PI_IP>:18080/test/redeem?reward=FULL%20BEANS&user=TestUser`
   - *Logic*: Standard pinto beans + "FULL BEANS" text.
 
+- **Test Corner Hit (Nuts)**:
+  `http://<PI_IP>:18080/test/nut?count=120&user=CORNER`
+  - *Logic*: Drops 3D hex nuts instead of beans + "CORNER HIT!" text.
+  - Add `&text=Something%20Else` for custom text, or `&text=0` for no banner.
+  - This is the only endpoint that takes an arbitrary count directly; for beans, use `/test/cheer` (beans = bits x 2).
+
+### Debug Overlay
+Load the overlay with `?debug` -- `http://<PI_IP>:18080/?debug` -- for a live `fps · on screen · queued` readout. **B** or a click anywhere drops 100 beans. Useful for checking the frame-rate governor on the Pi, whose ceiling is much lower than a desktop's.
+
 ## Troubleshooting
 - **No Sound**: 
   - Ensure `Windchimes.mp3` is in the folder.
   - Browser autoplay policy might block sound. Interactions (clicking the overlay) usually unlock it. In OBS, checking "Control Audio via OBS" usually bypasses this.
 - **Connection Refused**: Check your Pi's firewall (allow ports 18765 and 18080).
+- **Overlay loads but nothing ever drops**: The page reached the HTTP server but not the WebSocket relay. Confirm `LOCAL_WS_PORT=18765` in `.env` -- the startup log must say `port 18765`, not `8765`. Set `BDS_DEBUG=1` to print the resolved config, including which `.env` file was actually loaded.
+- **Overlay is completely blank**: Three.js and Cannon-es load from the unpkg CDN at runtime, so the Pi needs outbound internet even though the server is local. See "Known Issues" in [README.md](README.md).
+- **Beans slow to a crawl on a big drop**: Expected. The frame-rate governor stretches the spawn interval below 30fps to keep the browser alive. On a Pi this engages sooner than on a desktop; raise `INTERVAL_THROTTLED` in `index.html` to lower the ceiling further.

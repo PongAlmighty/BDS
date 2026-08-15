@@ -11,6 +11,7 @@ A physics-based Twitch overlay that drops 3D beans on your screen when viewers C
   - **< 100 Bits**: Silent golden drop.
   - **>= 100 Bits**: "GOLDEN BEANS" banner + Windchime sound effect.
   - **Redemptions**: "FULL BEANS" banner.
+- **StrangerTV Corner Hits**: Polls the kiosk's status endpoint; when its bouncing DVD nut lands in a corner, drops 3D hex nuts (not beans) with a "CORNER HIT!" banner. Polling rather than push because the kiosk cannot reach this machine. Set `KIOSK_STATUS_URL` to enable, blank to disable.
 - **Optimized Performance**: Drops start at full speed (~8 seconds for a typical drop) and a frame-rate governor stretches the spawn interval if the browser starts to slip, so a huge cheer lands slowly instead of crashing the tab.
 
 ## Known Issues
@@ -33,6 +34,20 @@ See [RASPBERRY_PI_SETUP.md](RASPBERRY_PI_SETUP.md) for installation and running 
 3. Run `python server.py`.
 4. Open `http://localhost:18080` in OBS or your browser.
 5. Test using `http://localhost:18080/test/cheer?bits=100`.
+
+### Test Endpoints
+All served from port `18080`:
+
+| Endpoint | Effect |
+|---|---|
+| `/test/cheer?bits=100&user=Name` | Golden beans, `bits * 2` of them. `>= 100` bits also shows the banner and plays the windchime. |
+| `/test/redeem?reward=FULL%20BEANS&user=Name` | Pinto beans, fixed at `beansPerRedeem` (100), plus the banner. |
+| `/test/nut?count=120&text=CORNER%20HIT!` | Hex nuts, arbitrary count. `text=0` suppresses the banner. |
+
+`/test/cheer` is the only way to request an arbitrary *bean* count -- `/test/redeem` takes no count parameter.
+
+### Debug Overlay
+Load the overlay with `?debug` (e.g. `http://localhost:18080/?debug`) for a live `fps · on screen · queued` readout, plus keyboard and click triggers: **B** or a click anywhere drops 100 beans.
 
 ### Ports
 | Port | Purpose | Configurable |

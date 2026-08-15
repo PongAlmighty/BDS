@@ -9,7 +9,8 @@ services:
       # Drop beans when the StrangerTV kiosk lands its DVD nut in a corner.
       # Blank this out to disable the watcher.
       KIOSK_STATUS_URL: http://192.168.0.252:5000/status
-      CORNER_BEANS: "120"
+      # CORNER_BEANS is still honoured as a legacy alias, but the drop is nuts now.
+      CORNER_NUTS: "120"
     volumes:
       - ./tokens.json:/app/tokens.json
       - ./.env:/app/.env
