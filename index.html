@@ -109,6 +109,15 @@
     // per-drop value -- a drop can still override it, and the corner warning does.
     const DEFAULT_LIFETIME_MS = 60000;
 
+    // A pass-through banner ignores the floor, the walls and everything falling
+    // around it, and simply drifts down and out of shot. 1.2 units/sec puts it on
+    // screen for about nine seconds -- long enough to read, gone about when the
+    // corner-warning nut despawns, instead of lying on the pile for a minute.
+    const PASS_THROUGH_SPEED = 1.2;
+    // The view is 10 units tall whatever the aspect ratio, so -7 is comfortably
+    // past the bottom edge for text of this size.
+    const TEXT_CULL_Y = -7;
+
     const canvas = document.getElementById("overlay-canvas");
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -423,7 +432,10 @@
       if (showText) {
         // Drop the text
         const textToSpawn = customText || (isGolden ? "GOLDEN BEANS" : CONFIG.rewardName);
-        spawnText(textToSpawn);
+        // Corner banners drift on through: the nut is the thing to look at, and the
+        // text outliving it by fifty seconds was the awkward part. Cheer and redeem
+        // banners still land on the pile as they always have.
+        spawnText(textToSpawn, { passThrough: isNut });
 
         // Play sound only if it's a golden drop and text is shown (>= 100 bits)
         if (isGolden) {
@@ -432,7 +444,7 @@
       }
     }
 
-    function spawnText(text = "FULL BEANS") {
+    function spawnText(text = "FULL BEANS", { passThrough = false } = {}) {
       if (!loadedFont) return;
 
       const textGeo = new TextGeometry(text, {
@@ -473,36 +485,54 @@
         (bbox.max.z - bbox.min.z) / 2
       );
       const textBody = new CANNON.Body({
-        mass: 2,
+        // Kinematic rather than dynamic for a pass-through: gravity would have it
+        // accelerating off the bottom in about a second, far too fast to read, and
+        // a steady velocity is easier to reason about than tuning damping for it.
+        mass: passThrough ? 0 : 2,
+        type: passThrough ? CANNON.Body.KINEMATIC : CANNON.Body.DYNAMIC,
         shape: new CANNON.Box(halfExtents),
         material: beanMaterial,
         linearDamping: 0.3,
         angularDamping: 0.5,
       });
       textBody.position.set((Math.random() - 0.5) * 6, 6, 0);
-      textBody.angularVelocity.set(
-        (Math.random() - 0.5) * 0.3,
-        (Math.random() - 0.5) * 0.3,
-        (Math.random() - 0.5) * 0.3
-      );
+      if (passThrough) {
+        // Kinematic bodies still shove dynamic ones aside; this one must not, or it
+        // would plough a furrow through the pile on its way past.
+        textBody.collisionResponse = false;
+        textBody.velocity.set(0, -PASS_THROUGH_SPEED, 0);
+        // No tumble: it has the whole descent to stay legible for.
+      } else {
+        textBody.angularVelocity.set(
+          (Math.random() - 0.5) * 0.3,
+          (Math.random() - 0.5) * 0.3,
+          (Math.random() - 0.5) * 0.3
+        );
+      }
       world.addBody(textBody);
 
       textMeshes.push(textMesh);
       textBodies.push(textBody);
 
-      // Remove after 1 minute
+      // Backstop for text that comes to rest on the pile. A pass-through banner is
+      // normally culled below the bottom edge long before this fires.
       setTimeout(() => {
         const idx = textMeshes.indexOf(textMesh);
-        if (idx !== -1) {
-          textMeshes.splice(idx, 1);
-          textBodies.splice(idx, 1);
-          world.removeBody(textBody);
-          scene.remove(textMesh);
-          textGeo.dispose();
-          whiteMat.dispose();
-          goldMat.dispose();
-        }
-      }, 60000);
+        if (idx !== -1) removeText(idx);
+      }, DEFAULT_LIFETIME_MS);
+    }
+
+    // Geometry and materials are per-banner rather than shared, so unlike the bean
+    // and nut meshes there is nothing here to hold back from disposing.
+    function removeText(idx) {
+      const mesh = textMeshes[idx];
+      const body = textBodies[idx];
+      textMeshes.splice(idx, 1);
+      textBodies.splice(idx, 1);
+      world.removeBody(body);
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+      for (const material of mesh.material) material.dispose();
     }
 
     function resizeRenderer() {
@@ -548,11 +578,13 @@
         mesh.position.copy(body.position);
         mesh.quaternion.copy(body.quaternion);
       }
-      for (let i = 0; i < textMeshes.length; i += 1) {
+      for (let i = textMeshes.length - 1; i >= 0; i -= 1) {
         const mesh = textMeshes[i];
         const body = textBodies[i];
         mesh.position.copy(body.position);
         mesh.quaternion.copy(body.quaternion);
+        // Resting text never gets near this; a pass-through banner leaves by it.
+        if (body.position.y < TEXT_CULL_Y) removeText(i);
       }
       renderer.render(scene, camera);
     }

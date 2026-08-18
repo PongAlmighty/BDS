@@ -37,7 +37,7 @@ CORNER_DROP_ON_HIT = os.getenv('CORNER_DROP_ON_HIT', '').strip().lower() in {'1'
 # The warning is a single oversized nut rather than a shower of small ones -- it reads
 # as "look up now" at a glance, which a hundred little ones do not.
 CORNER_WARN_NUTS = int(os.getenv('CORNER_WARN_NUTS', '1'))
-CORNER_WARN_SCALE = float(os.getenv('CORNER_WARN_SCALE', '5'))
+CORNER_WARN_SCALE = float(os.getenv('CORNER_WARN_SCALE', '2.5'))
 # It is a heads-up, not scenery: it should be gone by the time the hit lands rather
 # than sitting in shot for the usual minute. Seconds; the overlay wants milliseconds.
 CORNER_WARN_LIFETIME = float(os.getenv('CORNER_WARN_LIFETIME', '10'))
