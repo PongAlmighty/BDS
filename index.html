@@ -104,6 +104,11 @@
       beansPerRedeem: 100,
     };
 
+    // How long a bean or nut sticks around before it despawns. The pile is sized
+    // around this (see the throttle note below), so it is the default rather than a
+    // per-drop value -- a drop can still override it, and the corner warning does.
+    const DEFAULT_LIFETIME_MS = 60000;
+
     const canvas = document.getElementById("overlay-canvas");
     const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -270,7 +275,8 @@
       return mesh;
     }
 
-    function spawnBean({ x = 0, y = 5, z = 0, isGolden = false, isNut = false, scale = 1 } = {}) {
+    function spawnBean({ x = 0, y = 5, z = 0, isGolden = false, isNut = false, scale = 1,
+                         lifetimeMs = DEFAULT_LIFETIME_MS } = {}) {
       const nut = isNut && nutGeometry;          // fall back to beans if it never loaded
       const mesh = nut ? createNutMesh(scale) : createBeanMesh(isGolden);
       // Nuts keep a sphere body like the beans. A hexagonal prism would let them
@@ -305,7 +311,8 @@
       beanMeshes.push(mesh);
       beanBodies.push(body);
 
-      // Remove bean after 1 minute
+      // Despawn. A minute for ordinary beans; the corner warning passes its own
+      // shorter lifetime so the oversized nut clears out instead of parking on screen.
       setTimeout(() => {
         const idx = beanMeshes.indexOf(mesh);
         if (idx !== -1) {
@@ -321,7 +328,7 @@
           mesh.material.map?.dispose();
           mesh.material.dispose();
         }
-      }, 60000);
+      }, lifetimeMs);
     }
 
     const windchimes = new Audio("Windchimes.mp3");
@@ -371,7 +378,8 @@
         const drop = activeDrops[i];
 
         while (drop.remaining > 0 && budget > 0 && now >= drop.nextSpawnAt) {
-          spawnBean({ x: drop.x, isGolden: drop.isGolden, isNut: drop.isNut, scale: drop.scale });
+          spawnBean({ x: drop.x, isGolden: drop.isGolden, isNut: drop.isNut, scale: drop.scale,
+                      lifetimeMs: drop.lifetimeMs });
           drop.remaining -= 1;
           budget -= 1;
           // Advance from the scheduled time, not from now, so a 16ms frame can
@@ -385,7 +393,7 @@
       }
     }
 
-    function dropBeans(count = CONFIG.beansPerRedeem, showText = true, isGolden = false, customText = null, isNut = false, scale = 1) {
+    function dropBeans(count = CONFIG.beansPerRedeem, showText = true, isGolden = false, customText = null, isNut = false, scale = 1, lifetimeMs = DEFAULT_LIFETIME_MS) {
       // Pick a random drop point along the top of the screen. A scaled-up nut is wide
       // enough that the usual +/-6 spread would spawn it overlapping a wall at +/-8,
       // which pins it against the side instead of letting it fall. Normal-sized drops
@@ -407,6 +415,7 @@
         isGolden,
         isNut,
         scale,
+        lifetimeMs,
         baseInterval,
         nextSpawnAt: performance.now(),
       });
@@ -565,7 +574,8 @@
     function handleRedemption(data = {}) {
       // Corner hit on the StrangerTV kiosk -- drops nuts, not beans
       if (data.type === "nut") {
-        dropBeans(data.count, data.showText, false, data.text || "CORNER HIT!", true, data.scale || 1);
+        dropBeans(data.count, data.showText, false, data.text || "CORNER HIT!", true,
+                  data.scale || 1, data.lifetimeMs || DEFAULT_LIFETIME_MS);
         setStatus(`Corner hit: ${data.count} nuts`, "success");
         return;
       }

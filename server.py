@@ -37,7 +37,10 @@ CORNER_DROP_ON_HIT = os.getenv('CORNER_DROP_ON_HIT', '').strip().lower() in {'1'
 # The warning is a single oversized nut rather than a shower of small ones -- it reads
 # as "look up now" at a glance, which a hundred little ones do not.
 CORNER_WARN_NUTS = int(os.getenv('CORNER_WARN_NUTS', '1'))
-CORNER_WARN_SCALE = float(os.getenv('CORNER_WARN_SCALE', '10'))
+CORNER_WARN_SCALE = float(os.getenv('CORNER_WARN_SCALE', '5'))
+# It is a heads-up, not scenery: it should be gone by the time the hit lands rather
+# than sitting in shot for the usual minute. Seconds; the overlay wants milliseconds.
+CORNER_WARN_LIFETIME = float(os.getenv('CORNER_WARN_LIFETIME', '10'))
 
 if BDS_DEBUG:
     print(f"Config file: {DOTENV_PATH}")
@@ -136,16 +139,18 @@ async def test_redemption_handler(request):
 async def test_nut_handler(request):
     count = int(request.query.get('count', CORNER_NUTS))
     scale = float(request.query.get('scale', '1'))
+    lifetime = float(request.query.get('lifetime', '60'))
     await broadcast({
         "type": "nut",
         "user": request.query.get('user', CORNER_USER),
         "count": count,
         "scale": scale,
+        "lifetimeMs": int(lifetime * 1000),
         "showText": request.query.get('text', '1') not in {'0', 'false', 'no'},
         "text": request.query.get('text') if request.query.get('text') not in
                 {None, '1', '0', 'false', 'no'} else CORNER_TEXT,
     })
-    return web.Response(text=f"Dropped {count} nuts at {scale}x")
+    return web.Response(text=f"Dropped {count} nuts at {scale}x for {lifetime}s")
 
 
 async def test_warn_handler(request):
@@ -155,10 +160,12 @@ async def test_warn_handler(request):
         "user": CORNER_USER,
         "count": CORNER_WARN_NUTS,
         "scale": CORNER_WARN_SCALE,
+        "lifetimeMs": int(CORNER_WARN_LIFETIME * 1000),
         "showText": True,
         "text": CORNER_TEXT,
     })
-    return web.Response(text=f"Simulated corner warning: {CORNER_WARN_NUTS} nut(s) at {CORNER_WARN_SCALE}x")
+    return web.Response(text=f"Simulated corner warning: {CORNER_WARN_NUTS} nut(s) at "
+                             f"{CORNER_WARN_SCALE}x for {CORNER_WARN_LIFETIME}s")
 
 async def on_redemption(data):
     """Callback for when a redemption happens on Twitch"""
@@ -189,10 +196,10 @@ async def watch_kiosk_corners():
     restarting BDS never replays an old event; anything that happens while BDS is
     down is simply missed.
 
-    The warning fires KIOSK_CORNER_WARN seconds ahead (5 by default). Our poll only
+    The warning fires KIOSK_CORNER_WARN seconds ahead (15 by default). Our poll only
     lands every KIOSK_POLL_INTERVAL, so the notice we actually pass on is somewhere
-    between the full lead and lead-minus-one-interval -- roughly 3-5s at the defaults,
-    which is the point: enough time to look up before it happens.
+    between the full lead and lead-minus-one-interval -- roughly 13-15s at the
+    defaults, which is the point: enough time to look up before it happens.
     """
     seen_warn, seen_hit, have_baseline = None, None, False
     async with aiohttp.ClientSession() as session:
@@ -214,12 +221,14 @@ async def watch_kiosk_corners():
                         seen_warn = warn
                         lead = data.get('corner_warn_lead')
                         print(f"CORNER INCOMING (kiosk lead {lead}s) -- dropping "
-                              f"{CORNER_WARN_NUTS} nut(s) at {CORNER_WARN_SCALE}x")
+                              f"{CORNER_WARN_NUTS} nut(s) at {CORNER_WARN_SCALE}x "
+                              f"for {CORNER_WARN_LIFETIME}s")
                         await broadcast({
                             "type": "nut",
                             "user": CORNER_USER,
                             "count": CORNER_WARN_NUTS,
                             "scale": CORNER_WARN_SCALE,
+                            "lifetimeMs": int(CORNER_WARN_LIFETIME * 1000),
                             "showText": True,
                             "text": CORNER_TEXT,
                         })
